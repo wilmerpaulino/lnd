@@ -299,18 +299,23 @@ func (l *channelLink) htlcManager() {
 
 	// If the link have been recreated, than we need to sync the states by
 	// sending the channel reestablishment message.
+	//
+	// TODO(roasbeef): remove bool
 	if l.cfg.SyncStates {
 		log.Infof("Syncing states for channel(%v) via sending the "+
 			"re-establishment message", l.channel.ChannelPoint())
 
+		// TODO(roasbeef): modify to just return re-init message in full
 		localCommitmentNumber, remoteRevocationNumber := l.channel.LastCounters()
 
+		// TODO(roasbeef): check errors
 		l.cfg.Peer.SendMessage(&lnwire.ChannelReestablish{
 			ChanID: l.ChanID(),
 			NextLocalCommitmentNumber:  localCommitmentNumber + 1,
 			NextRemoteRevocationNumber: remoteRevocationNumber + 1,
 		})
 
+		// TODO(roasbeef): use goroutine here instead?
 		if err := l.channelInitialization(); err != nil {
 			err := errors.Errorf("unable to sync the states for channel(%v)"+
 				"with remote node: %v", l.ChanID(), err)
@@ -378,6 +383,7 @@ out:
 			log.Warnf("Remote peer has closed ChannelPoint(%v) on-chain",
 				l.channel.ChannelPoint())
 
+			// TODO(roasbeef): remove all together
 			go func() {
 				if err := l.cfg.Peer.WipeChannel(l.channel); err != nil {
 					log.Errorf("unable to wipe channel %v", err)
@@ -476,6 +482,7 @@ out:
 		case msg := <-l.upstream:
 			l.handleUpstreamMsg(msg)
 
+		// TODO(roasbeef): make distinct goroutine to handle?
 		case cmd := <-l.linkControl:
 
 			switch req := cmd.(type) {
@@ -1557,6 +1564,8 @@ func (l *channelLink) channelInitialization() error {
 					"for channel link should be reestablish message")
 			}
 
+		// TODO(roasbeef): only needed in order to process cmds while
+		// waiting for chan est?
 		case pkt := <-l.downstream:
 			l.overflowQueue.consume(pkt)
 

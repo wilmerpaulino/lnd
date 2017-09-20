@@ -289,7 +289,7 @@ type OpenChannel struct {
 	// happen after a system restart.
 	CommitFee btcutil.Amount
 
-	// CommitKey is the latest version of the commitment state, broadcast
+	// CommitTx is the latest version of the commitment state, broadcast
 	// able by us.
 	CommitTx wire.MsgTx
 
@@ -337,6 +337,9 @@ type OpenChannel struct {
 	// TheirMessageIndex...
 	TheirMessageIndex uint64
 
+	// TODO(roasbeef): need to store acked indexes??
+	//  * will be equal if not a pending commit?
+
 	// OurMessageIndex...
 	OurAckedIndex uint64
 
@@ -360,6 +363,8 @@ type OpenChannel struct {
 	Htlcs []*HTLC
 
 	// LastUpdates...
+	//
+	// TODO(roasbeef): remove all together??!
 	LastUpdates lnwire.Message
 
 	// TODO(roasbeef): eww
@@ -537,6 +542,8 @@ func (c *OpenChannel) UpdateCommitment(newCommitment *wire.MsgTx,
 }
 
 // UpdateHTLCs....
+//
+// TODO(roasbeef): delete all together?
 func (c *OpenChannel) UpdateHTLCs(htlcs []*HTLC) error {
 	c.Lock()
 	defer c.Unlock()
@@ -595,6 +602,8 @@ type HTLC struct {
 	// OnionBlob is an opaque blob which is used to complete multi-hop
 	// routing.
 	OnionBlob []byte
+
+	// TODO(roasbeef): don't need inclusion height at all?
 
 	// AddLocalInclusionHeight...
 	AddLocalInclusionHeight uint64
@@ -666,7 +675,7 @@ type CommitDiff struct {
 	PendingHeight uint64
 
 	// PendingCommitment...
-	PendingCommitment *ChannelDelta
+	PendingCommitment ChannelDelta
 
 	// Updates...
 	Updates []lnwire.Message
@@ -678,7 +687,7 @@ func (d *CommitDiff) decode(w io.Writer) error {
 		return err
 	}
 
-	if err := serializeChannelDelta(w, d.PendingCommitment); err != nil {
+	if err := serializeChannelDelta(w, &d.PendingCommitment); err != nil {
 		return err
 	}
 
@@ -705,7 +714,7 @@ func (d *CommitDiff) encode(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	d.PendingCommitment = delta
+	d.PendingCommitment = *delta
 
 	var length uint16
 	if err := binary.Read(r, byteOrder, &length); err != nil {
@@ -725,8 +734,10 @@ func (d *CommitDiff) encode(r io.Reader) error {
 }
 
 // AddCommitDiff...
-func AddCommitDiff(db *DB, fundingOutpoint *wire.OutPoint,
-	diff *CommitDiff) error {
+//
+// TODO(roasbeef): make method on OpenChannel itself
+func AddCommitDiff(db *DB, fundingOutpoint *wire.OutPoint, diff *CommitDiff) error {
+
 	return db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(commitDiffBucket)
 		if err != nil {
@@ -750,6 +761,8 @@ func AddCommitDiff(db *DB, fundingOutpoint *wire.OutPoint,
 }
 
 // FetchCommitDiff...
+//
+// TODO(roasbeef): make method on OpenChannel itself
 func FetchCommitDiff(db *DB, fundingOutpoint *wire.OutPoint) (*CommitDiff, error) {
 	var diff *CommitDiff
 	err := db.View(func(tx *bolt.Tx) error {
@@ -842,7 +855,8 @@ func (c *OpenChannel) AppendToRevocationLog(delta *ChannelDelta) error {
 			return err
 		}
 
-		// ...
+		// TODO(roasbeef): fin comment -> delete diff after recv their
+		// revocation
 		diffBucket := tx.Bucket(commitDiffBucket)
 		if diffBucket != nil {
 			var outpoint bytes.Buffer
