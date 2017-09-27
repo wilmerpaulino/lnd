@@ -212,6 +212,60 @@ type ChannelConfig struct {
 	DelayBasePoint *btcec.PublicKey
 }
 
+// ChannelCommitment is a snapshot of the commitment state at a particular
+// point in the commitment chain. With each state transition, a snapshot of the
+// current state along with all non-settled HTLCs are recorded. These snapshots
+// detail the state of the _remote_ party's commitment at a particular state
+// number.  For ourselves (the local node) we ONLY store our most recent
+// (unrevoked) state for safety purposes.
+type ChannelCommitment struct {
+	// LocalMessageIndex...
+	LocalMessageIndex uint64
+
+	// RemoteMessageIndex...
+	RemoteMessageIndex uint64
+
+	// TODO(roasbeef): need to store acked indexes??
+	//  * will be equal if not a pending commit?
+
+	// OurMessageIndex...
+	OurAckedIndex uint64
+
+	// TheirMessageIndex...
+	TheirAckedIndex uint64
+
+	// LocalBalance is the current available settled balance within the
+	// channel directly spendable by us.
+	LocalBalance btcutil.Amount
+
+	// RemoteBalance is the current available settled balance within the
+	// channel directly spendable by the remote node.
+	RemoteBalance btcutil.Amount
+
+	// CommitFee is the amount calculated to be paid in fees for the
+	// current set of commitment transactions. The fee amount is persisted
+	// with the channel in order to allow the fee amount to be removed and
+	// recalculated with each channel state update, including updates that
+	// happen after a system restart.
+	CommitFee btcutil.Amount
+
+	// FeePerKw is the min satoshis/kilo-weight that should be paid within
+	// the commitment transaction for the entire duration of the channel's
+	// lifetime. This field may be updated during normal operation of the
+	// channel as on-chain conditions change.
+	FeePerKw btcutil.Amount
+
+	// CommitHeight is the update number that this ChannelDelta represents
+	// the total number of commitment updates to this point. This can be
+	// viewed as sort of a "commitment height" as this number is
+	// monotonically increasing.
+	CommitHeight uint64
+
+	// Htlcs is the set of HTLC's that are pending at this particular
+	// commitment height.
+	Htlcs []*HTLC
+}
+
 // OpenChannel encapsulates the persistent and dynamic state of an open channel
 // with a remote node. An open channel supports several options for on-disk
 // serialization depending on the exact context. Full (upon channel creation)
@@ -265,29 +319,14 @@ type OpenChannel struct {
 	// RemoteChanCfg is the channel configuration for the remote node.
 	RemoteChanCfg ChannelConfig
 
-	// FeePerKw is the min satoshis/kilo-weight that should be paid within
-	// the commitment transaction for the entire duration of the channel's
-	// lifetime. This field may be updated during normal operation of the
-	// channel as on-chain conditions change.
-	FeePerKw btcutil.Amount
-
 	// Capacity is the total capacity of this channel.
 	Capacity btcutil.Amount
 
-	// LocalBalance is the current available settled balance within the
-	// channel directly spendable by us.
-	LocalBalance lnwire.MilliSatoshi
+	// LocalCommitment...
+	LocalCommitment ChannelCommitment
 
-	// RemoteBalance is the current available settled balance within the
-	// channel directly spendable by the remote node.
-	RemoteBalance lnwire.MilliSatoshi
-
-	// CommitFee is the amount calculated to be paid in fees for the
-	// current set of commitment transactions. The fee amount is persisted
-	// with the channel in order to allow the fee amount to be removed and
-	// recalculated with each channel state update, including updates that
-	// happen after a system restart.
-	CommitFee btcutil.Amount
+	// RemoteCommitment...
+	RemoteCommitment ChannelCommitment
 
 	// CommitTx is the latest version of the commitment state, broadcast
 	// able by us.
@@ -331,21 +370,6 @@ type OpenChannel struct {
 	// channel.
 	NumUpdates uint64
 
-	// OurMessageIndex...
-	OurMessageIndex uint64
-
-	// TheirMessageIndex...
-	TheirMessageIndex uint64
-
-	// TODO(roasbeef): need to store acked indexes??
-	//  * will be equal if not a pending commit?
-
-	// OurMessageIndex...
-	OurAckedIndex uint64
-
-	// TheirMessageIndex...
-	TheirAckedIndex uint64
-
 	// TotalSatoshisSent is the total number of satoshis we've sent within
 	// this channel.
 	TotalSatoshisSent uint64
@@ -357,15 +381,6 @@ type OpenChannel struct {
 	// TotalMSatReceived is the total number of milli-satoshis we've
 	// received within this channel.
 	TotalMSatReceived lnwire.MilliSatoshi
-
-	// Htlcs is the list of active, uncleared HTLCs currently pending
-	// within the channel.
-	Htlcs []*HTLC
-
-	// LastUpdates...
-	//
-	// TODO(roasbeef): remove all together??!
-	LastUpdates lnwire.Message
 
 	// TODO(roasbeef): eww
 	Db *DB
@@ -629,56 +644,16 @@ func (h *HTLC) Copy() HTLC {
 	return clone
 }
 
-// ChannelDelta is a snapshot of the commitment state at a particular point in
-// the commitment chain. With each state transition, a snapshot of the current
-// state along with all non-settled HTLCs are recorded. These snapshots detail
-// the state of the _remote_ party's commitment at a particular state number.
-// For ourselves (the local node) we ONLY store our most recent (unrevoked)
-// state for safety purposes.
-type ChannelDelta struct {
-	// OurMessageIndex...
-	OurMessageIndex uint64
-
-	// TheirMessageIndex...
-	TheirMessageIndex uint64
-
-	// LocalBalance is our current balance at this particular update
-	// number.
-	LocalBalance lnwire.MilliSatoshi
-
-	// RemoteBalanceis the balance of the remote node at this particular
-	// update number.
-	RemoteBalance lnwire.MilliSatoshi
-
-	// CommitFee is the fee that has been subtracted from the channel
-	// initiator's balance at this point in the commitment chain.
-	CommitFee btcutil.Amount
-
-	// FeePerKw is the fee per kw used to calculate the commit fee at this point
-	// in the commit chain.
-	FeePerKw btcutil.Amount
-
-	// UpdateNum is the update number that this ChannelDelta represents the
-	// total number of commitment updates to this point. This can be viewed
-	// as sort of a "commitment height" as this number is monotonically
-	// increasing.
-	UpdateNum uint64
-
-	// Htlcs is the set of HTLC's that are pending at this particular
-	// commitment height.
-	Htlcs []*HTLC
-}
-
 // CommitDiff...
 type CommitDiff struct {
 	// PendingHeight...
 	PendingHeight uint64
 
 	// PendingCommitment...
-	PendingCommitment ChannelDelta
+	PendingCommitment ChannelCommitment
 
-	// Updates...
-	Updates []lnwire.Message
+	// UpdateDiff...
+	UpdateDiff []lnwire.Message
 }
 
 // decode...
