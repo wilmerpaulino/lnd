@@ -2088,6 +2088,7 @@ func (lc *LightningChannel) evaluateHTLCView(view *htlcView, ourBalance,
 			entry.removeCommitHeightLocal == 0 {
 			lc.channelState.TotalMSatReceived += entry.Amount
 		}
+		// TODO(roasbeef): update to also edit their stats
 
 		addEntry := lc.remoteUpdateLog.lookupHtlc(entry.ParentIndex)
 
