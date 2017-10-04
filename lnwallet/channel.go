@@ -3131,6 +3131,8 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) ([]*P
 	lc.channelState.RemoteCurrentRevocation = lc.channelState.RemoteNextRevocation
 	lc.channelState.RemoteNextRevocation = revMsg.NextRevocationKey
 
+	// TODO(roasbeef): make updates within db transaction below
+
 	walletLog.Tracef("ChannelPoint(%v): remote party accepted state transition, "+
 		"revoked height %v, now at %v", lc.channelState.FundingOutpoint,
 		lc.remoteCommitChain.tail().height,

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/boltdb/bolt"
-	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/roasbeef/btcd/btcec"
 	"github.com/roasbeef/btcd/wire"
 )
@@ -255,33 +254,28 @@ func (d *DB) fetchNodeChannels(openChanBucket,
 
 	var channels []*OpenChannel
 
-	// Once we have the node's channel bucket, iterate through each
-	// item in the inner chan ID bucket. This bucket acts as an
-	// index for all channels we currently have open with this node.
-	nodeChanIDBucket := nodeChanBucket.Bucket(chanIDBucket[:])
-	if nodeChanIDBucket == nil {
-		return nil, nil
-	}
-	err := nodeChanIDBucket.ForEach(func(k, v []byte) error {
-		if k == nil {
+	// TODO(roasbeef): comment
+	err := nodeChanBucket.ForEach(func(chanPoint, v []byte) error {
+		// If there's a value, it's not a bucket so ignore it.
+		if v != nil {
 			return nil
 		}
 
-		outBytes := bytes.NewReader(k)
-		chanID := &wire.OutPoint{}
-		if err := readOutpoint(outBytes, chanID); err != nil {
+		chanBucket := nodeChanBucket.Bucket(chanPoint)
+
+		var outPoint *wire.OutPoint
+		err := readOutpoint(bytes.NewReader(chanPoint), outPoint)
+		if err != nil {
 			return err
 		}
-
-		oChannel, err := fetchOpenChannel(openChanBucket,
-			nodeChanBucket, chanID)
+		oChannel, err := fetchOpenChannel(chanBucket, outPoint)
 		if err != nil {
 			return fmt.Errorf("unable to read channel data for "+
-				"chan_point=%v: %v", chanID, err)
+				"chan_point=%v: %v", outPoint, err)
 		}
-		oChannel.Db = d
 
 		channels = append(channels, oChannel)
+
 		return nil
 	})
 	if err != nil {
@@ -358,52 +352,6 @@ func fetchChannels(d *DB, pendingOnly bool) ([]*OpenChannel, error) {
 	return channels, err
 }
 
-// MarkChannelAsOpen records the finalization of the funding process and marks
-// a channel as available for use. Additionally the height in which this
-// channel as opened will also be recorded within the database.
-func (d *DB) MarkChannelAsOpen(outpoint *wire.OutPoint,
-	openLoc lnwire.ShortChannelID) error {
-
-	return d.Update(func(tx *bolt.Tx) error {
-		openChanBucket := tx.Bucket(openChannelBucket)
-		if openChanBucket == nil {
-			return ErrNoActiveChannels
-		}
-
-		// Generate the database key, which will consist of the
-		// IsPending prefix followed by the channel's outpoint.
-		var b bytes.Buffer
-		if err := writeOutpoint(&b, outpoint); err != nil {
-			return err
-		}
-		keyPrefix := make([]byte, 3+b.Len())
-		copy(keyPrefix[3:], b.Bytes())
-		copy(keyPrefix[:3], isPendingPrefix)
-
-		// For the database value, store a zero, since the channel is
-		// no longer pending.
-		scratch := make([]byte, 4)
-		byteOrder.PutUint16(scratch[:2], uint16(0))
-		if err := openChanBucket.Put(keyPrefix, scratch[:2]); err != nil {
-			return err
-		}
-
-		// Finally, we'll also store the opening height for this
-		// channel as well.
-		confInfoKey := make([]byte, len(confInfoPrefix)+len(b.Bytes()))
-		copy(confInfoKey[:len(confInfoPrefix)], confInfoPrefix)
-		copy(confInfoKey[len(confInfoPrefix):], b.Bytes())
-
-		confInfoBytes := openChanBucket.Get(confInfoKey)
-		infoCopy := make([]byte, len(confInfoBytes))
-		copy(infoCopy[:], confInfoBytes)
-
-		byteOrder.PutUint64(infoCopy[4:], openLoc.ToUint64())
-
-		return openChanBucket.Put(confInfoKey, infoCopy)
-	})
-}
-
 // FetchClosedChannels attempts to fetch all closed channels from the database.
 // The pendingOnly bool toggles if channels that aren't yet fully closed should
 // be returned int he response or not. When a channel was cooperatively closed,
@@ -420,22 +368,17 @@ func (d *DB) FetchClosedChannels(pendingOnly bool) ([]*ChannelCloseSummary, erro
 		}
 
 		return closeBucket.ForEach(func(chanID []byte, summaryBytes []byte) error {
-			// The first byte of the summary is a bool which
-			// indicates if this channel is pending closure, or has
-			// been fully closed.
-			isPending := summaryBytes[0]
-
-			// If the query specified to only include pending
-			// channels, then we'll skip any channels which aren't
-			// currently pending.
-			if pendingOnly && isPending != 0x01 {
-				return nil
-			}
-
 			summaryReader := bytes.NewReader(summaryBytes)
 			chanSummary, err := deserializeCloseChannelSummary(summaryReader)
 			if err != nil {
 				return err
+			}
+
+			// If the query specified to only include pending
+			// channels, then we'll skip any channels which aren't
+			// currently pending.
+			if chanSummary.IsPending {
+				return nil
 			}
 
 			chanSummaries = append(chanSummaries, chanSummary)

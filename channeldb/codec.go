@@ -2,8 +2,8 @@ package channeldb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
-	"sync"
 
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
@@ -13,13 +13,6 @@ import (
 	"github.com/roasbeef/btcutil"
 )
 
-// TODO(roasbeef): buffer pool?
-
-// bufPool...
-type bufPool struct {
-	sync.Pool
-}
-
 // outPointSize...
 const outPointSize = 36
 
@@ -28,7 +21,7 @@ func writeOutpoint(w io.Writer, o *wire.OutPoint) error {
 	if _, err := w.Write(o.Hash[:]); err != nil {
 		return err
 	}
-	if _, err := binary.Write(w, byteOrder, o.Index); err != nil {
+	if err := binary.Write(w, byteOrder, o.Index); err != nil {
 		return err
 	}
 
@@ -40,7 +33,7 @@ func readOutpoint(r io.Reader, o *wire.OutPoint) error {
 	if _, err := io.ReadFull(r, o.Hash[:]); err != nil {
 		return err
 	}
-	if _, err := binary.Read(r, byteOrder, &o.Index); err != nil {
+	if err := binary.Read(r, byteOrder, &o.Index); err != nil {
 		return err
 	}
 
@@ -51,10 +44,10 @@ func readOutpoint(r io.Reader, o *wire.OutPoint) error {
 // any element which is to be serialized for storage on disk. The passed
 // io.Writer should be backed by an appropriately sized byte slice, or be able
 // to dynamically expand to accommodate additional data.
-func writeElement(w io.Writer, element interface{}) error {kj
+func writeElement(w io.Writer, element interface{}) error {
 	switch e := element.(type) {
 	case ChannelType:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
@@ -67,42 +60,42 @@ func writeElement(w io.Writer, element interface{}) error {kj
 		return writeOutpoint(w, &e)
 
 	case lnwire.ShortChannelID:
-		if _, err := binary.Write(w, byteOrder, uint64(e)); err != nil {
+		if err := binary.Write(w, byteOrder, e.ToUint64()); err != nil {
 			return err
 		}
 
 	case uint64:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
 	case uint32:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
 	case int32:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
 	case uint16:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
 	case bool:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if err := binary.Write(w, byteOrder, e); err != nil {
 			return err
 		}
 
 	case btcutil.Amount:
-		if _, err := binary.Write(w, byteOrder, uint64(e)); err != nil {
+		if err := binary.Write(w, byteOrder, uint64(e)); err != nil {
 			return err
 		}
 
 	case lnwire.MilliSatoshi:
-		if _, err := binary.Write(w, byteOrder, uint64(e)); err != nil {
+		if err := binary.Write(w, byteOrder, uint64(e)); err != nil {
 			return err
 		}
 
@@ -122,19 +115,21 @@ func writeElement(w io.Writer, element interface{}) error {kj
 		return e.Serialize(w)
 
 	case []byte:
-		if err := wire.WriteVarBytes(&b, 0, e); err != nil {
+		if err := wire.WriteVarBytes(w, 0, e); err != nil {
 			return err
 		}
 
 	case lnwire.Message:
-		return lnwire.WriteMessage(w, e, 0)
-
-	case ClosureType:
-		if _, err := binary.Write(w, byteOrder, e); err != nil {
+		if _, err := lnwire.WriteMessage(w, e, 0); err != nil {
 			return err
 		}
 
-	    case default:
+	case ClosureType:
+		if err := binary.Write(w, byteOrder, e); err != nil {
+			return err
+		}
+
+	default:
 		return fmt.Errorf("Unknown type in writeElement: %T", e)
 	}
 
@@ -163,7 +158,7 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 
 	case *chainhash.Hash:
-		if _, err := io.ReadFull(r, e); err != nil {
+		if _, err := io.ReadFull(r, e[:]); err != nil {
 			return err
 		}
 
@@ -216,11 +211,11 @@ func readElement(r io.Reader, element interface{}) error {
 			return err
 		}
 
-		*e = btcutil.Amount(a)
+		*e = lnwire.MilliSatoshi(a)
 
 	case **btcec.PublicKey:
 		var b [btcec.PubKeyBytesLenCompressed]byte
-		if _, err = io.ReadFull(r, b[:]); err != nil {
+		if _, err := io.ReadFull(r, b[:]); err != nil {
 			return err
 		}
 
@@ -230,9 +225,9 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 		*e = pubKey
 
-	case *shachain.Producer:
+	case shachain.Producer:
 		var root [32]byte
-		if _, err := io.ReadFull(reader, root[:]); err != nil {
+		if _, err := io.ReadFull(r, root[:]); err != nil {
 			return err
 		}
 
@@ -243,9 +238,8 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 
 		e = producer
-	case *shachain.Store:
-
-		store, err := shachain.NewRevocationStoreFromBytes(reader)
+	case shachain.Store:
+		store, err := shachain.NewRevocationStoreFromBytes(r)
 		if err != nil {
 			return err
 		}
@@ -266,9 +260,9 @@ func readElement(r io.Reader, element interface{}) error {
 			return err
 		}
 
-		e = bytes
+		e = &bytes
 
-	case *lnwire.Message:
+	case lnwire.Message:
 		msg, err := lnwire.ReadMessage(r, 0)
 		if err != nil {
 			return err
@@ -277,11 +271,11 @@ func readElement(r io.Reader, element interface{}) error {
 		e = msg
 
 	case *ClosureType:
-		if _, err := binary.Read(w, byteOrder, e); err != nil {
+		if err := binary.Read(r, byteOrder, e); err != nil {
 			return err
 		}
 
-	    default:
+	default:
 		return fmt.Errorf("Unknown type in readElement: %T", e)
 	}
 
