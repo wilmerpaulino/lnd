@@ -222,8 +222,8 @@ func (d *DB) FetchOpenChannels(nodeID *btcec.PublicKey) ([]*OpenChannel, error) 
 			return nil
 		}
 
-		// Within this top level bucket, fetch the bucket dedicated to storing
-		// open channel data specific to the remote node.
+		// Within this top level bucket, fetch the bucket dedicated to
+		// storing open channel data specific to the remote node.
 		pub := nodeID.SerializeCompressed()
 		nodeChanBucket := openChanBucket.Bucket(pub)
 		if nodeChanBucket == nil {
@@ -232,8 +232,7 @@ func (d *DB) FetchOpenChannels(nodeID *btcec.PublicKey) ([]*OpenChannel, error) 
 
 		// Finally, we both of the necessary buckets retrieved, fetch
 		// all the active channels related to this node.
-		nodeChannels, err := d.fetchNodeChannels(openChanBucket,
-			nodeChanBucket)
+		nodeChannels, err := d.fetchNodeChannels(nodeChanBucket)
 		if err != nil {
 			return fmt.Errorf("unable to read channel for "+
 				"node_key=%x: %v", pub, err)
@@ -249,8 +248,7 @@ func (d *DB) FetchOpenChannels(nodeID *btcec.PublicKey) ([]*OpenChannel, error) 
 // fetchNodeChannels retrieves all active channels from the target
 // nodeChanBucket. This function is typically used to fetch all the active
 // channels related to a particular node.
-func (d *DB) fetchNodeChannels(openChanBucket,
-	nodeChanBucket *bolt.Bucket) ([]*OpenChannel, error) {
+func (d *DB) fetchNodeChannels(nodeChanBucket *bolt.Bucket) ([]*OpenChannel, error) {
 
 	var channels []*OpenChannel
 
@@ -263,16 +261,17 @@ func (d *DB) fetchNodeChannels(openChanBucket,
 
 		chanBucket := nodeChanBucket.Bucket(chanPoint)
 
-		var outPoint *wire.OutPoint
-		err := readOutpoint(bytes.NewReader(chanPoint), outPoint)
+		var outPoint wire.OutPoint
+		err := readOutpoint(bytes.NewReader(chanPoint), &outPoint)
 		if err != nil {
 			return err
 		}
-		oChannel, err := fetchOpenChannel(chanBucket, outPoint)
+		oChannel, err := fetchOpenChannel(chanBucket, &outPoint)
 		if err != nil {
 			return fmt.Errorf("unable to read channel data for "+
 				"chan_point=%v: %v", outPoint, err)
 		}
+		oChannel.Db = d
 
 		channels = append(channels, oChannel)
 
@@ -329,8 +328,7 @@ func fetchChannels(d *DB, pendingOnly bool) ([]*OpenChannel, error) {
 				return nil
 			}
 
-			nodeChannels, err := d.fetchNodeChannels(openChanBucket,
-				nodeChanBucket)
+			nodeChannels, err := d.fetchNodeChannels(nodeChanBucket)
 			if err != nil {
 				return fmt.Errorf("unable to read channel for "+
 					"node_key=%x: %v", k, err)

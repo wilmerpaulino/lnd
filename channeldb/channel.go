@@ -236,13 +236,15 @@ type ChannelCommitment struct {
 
 	// CommitTx is the latest version of the commitment state, broadcast
 	// able by us.
-	CommitTx wire.MsgTx
+	CommitTx *wire.MsgTx
 
 	// CommitSig is one half of the signature required to fully complete
 	// the script for the commitment transaction above. This is the
 	// signature signed by the remote party for our version of the
 	// commitment transactions.
 	CommitSig []byte
+
+	// TODO(roasbeef): always our sig? ^
 
 	// Htlcs is the set of HTLC's that are pending at this particular
 	// commitment height.
@@ -344,6 +346,8 @@ type OpenChannel struct {
 
 	// TODO(roasbeef): eww
 	Db *DB
+
+	// TODO(roasbeef): just need to store local and remote HTLC's?
 
 	sync.RWMutex
 }
@@ -573,9 +577,7 @@ func (c *OpenChannel) SyncPending(addr *net.TCPAddr, pendingHeight uint32) error
 // state at this point in the commitment chain. This method its to be called on
 // two occasions: when we revoke our prior commitment state, and when the
 // remote party revokes their prior commitment state.
-func (c *OpenChannel) UpdateCommitment(newCommitment *ChannelCommitment,
-	isLocal bool) error {
-
+func (c *OpenChannel) UpdateCommitment(newCommitment *ChannelCommitment) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -588,17 +590,13 @@ func (c *OpenChannel) UpdateCommitment(newCommitment *ChannelCommitment,
 
 		// With the proper bucket fetched, we'll now write toe latest
 		// commitment state to dis for the target party.
-		return putChanCommitment(chanBucket, newCommitment, isLocal)
+		return putChanCommitment(chanBucket, newCommitment, true)
 	})
 	if err != nil {
 		return err
 	}
 
-	if isLocal {
-		c.LocalCommitment = *newCommitment
-	} else {
-		c.RemoteCommitment = *newCommitment
-	}
+	c.LocalCommitment = *newCommitment
 
 	return nil
 }
@@ -670,8 +668,8 @@ func deserializeHtlcs(r io.Reader) ([]HTLC, error) {
 	for i := uint16(0); i < numHtlcs; i++ {
 		if err := readElements(r,
 			&htlcs[i].Signature, &htlcs[i].RHash, &htlcs[i].Amt,
-			&htlcs[i].RefundTimeout,
-			&htlcs[i].OutputIndex, &htlcs[i].Incoming, htlcs[i].OnionBlob,
+			&htlcs[i].RefundTimeout, &htlcs[i].OutputIndex,
+			&htlcs[i].Incoming, &htlcs[i].OnionBlob,
 			&htlcs[i].LogIndex,
 		); err != nil {
 			return htlcs, err
@@ -710,11 +708,6 @@ type LogUpdate struct {
 // at state N+1. Each time a new commitmetn is extended, we'll write a new
 // commitment (along with the full comitment state) to disk so we can
 // re-transmit the state in the case of a connection loss or message drop.
-//
-// TODO(roasbeef): NEED TO ALSO WRITE TO DISK ON COMMIT RECV!!!
-//  * one load back up add this to local chain if it's there
-//  * loaded as their HTLC's
-//  * ACTUALLY DON'T NEED TO???
 type CommitDiff struct {
 	// ChannelCommitment is the full commitment state that one would arrive
 	// at by applying the set of messages contained in the UpdateDiff to
@@ -781,7 +774,7 @@ func deserializeCommitDiff(r io.Reader) (*CommitDiff, error) {
 }
 
 // AppendToCommitChain...
-func (c *OpenChannel) AppendToCommitChain(diff *CommitDiff) error {
+func (c *OpenChannel) AppendRemoteCommitChain(diff *CommitDiff) error {
 	return c.Db.Update(func(tx *bolt.Tx) error {
 		chanBucket, err := updateChanBucket(tx, c.IdentityPub,
 			&c.FundingOutpoint)
@@ -800,7 +793,7 @@ func (c *OpenChannel) AppendToCommitChain(diff *CommitDiff) error {
 }
 
 // CommitChainTip...
-func (c *OpenChannel) CommitChainTip() (*CommitDiff, error) {
+func (c *OpenChannel) RemoteCommitChainTip() (*CommitDiff, error) {
 	var cd *CommitDiff
 	err := c.Db.View(func(tx *bolt.Tx) error {
 		chanBucket, err := readChanBucket(tx, c.IdentityPub,
@@ -841,6 +834,8 @@ func (c *OpenChannel) InsertNextRevocation(revKey *btcec.PublicKey) error {
 	c.Lock()
 	defer c.Unlock()
 
+	c.RemoteNextRevocation = revKey
+
 	err := c.Db.Update(func(tx *bolt.Tx) error {
 		chanBucket, err := updateChanBucket(tx, c.IdentityPub,
 			&c.FundingOutpoint)
@@ -854,7 +849,6 @@ func (c *OpenChannel) InsertNextRevocation(revKey *btcec.PublicKey) error {
 		return err
 	}
 
-	c.RemoteNextRevocation = revKey
 	return nil
 }
 
@@ -864,7 +858,7 @@ func (c *OpenChannel) InsertNextRevocation(revKey *btcec.PublicKey) error {
 // this log can be consulted in order to reconstruct the state needed to
 // rectify the situation.
 //
-// TODO(roasbeef): rename -> AdvanceCommitChainTail()
+// TODO(roasbeef): pass in next next revocation?
 func (c *OpenChannel) AdvanceCommitChainTail() error {
 	var newRemoteCommit *ChannelCommitment
 	err := c.Db.Update(func(tx *bolt.Tx) error {
@@ -899,11 +893,11 @@ func (c *OpenChannel) AdvanceCommitChainTail() error {
 		// with the current locked-in commitment for the rmote party.
 		tipBytes := chanBucket.Get(commitDiffKey)
 		tipReader := bytes.NewReader(tipBytes)
-		newCommit, err := deserializeChanCommit(tipReader)
+		newCommit, err := deserializeCommitDiff(tipReader)
 		if err != nil {
 			return err
 		}
-		err = putChanCommitment(chanBucket, &newCommit, false)
+		err = putChanCommitment(chanBucket, &newCommit.Commitment, false)
 		if err != nil {
 			return err
 		}
@@ -920,7 +914,7 @@ func (c *OpenChannel) AdvanceCommitChainTail() error {
 			return err
 		}
 
-		newRemoteCommit = &newCommit
+		newRemoteCommit = &newCommit.Commitment
 		return nil
 	})
 	if err != nil {
@@ -1165,14 +1159,20 @@ func (c *OpenChannel) CloseChannel(summary *ChannelCloseSummary) error {
 		// information stored within the revocation log.
 		logBucket := chanBucket.Bucket(revocationLogBucket)
 		if logBucket != nil {
+			fmt.Println("TRYING")
 			err := wipeChannelLogEntries(logBucket)
 			if err != nil {
 				return err
 			}
-			err = chanBucket.Delete(revocationLogBucket)
+			err = chanBucket.DeleteBucket(revocationLogBucket)
 			if err != nil {
 				return err
 			}
+		}
+
+		err = nodeChanBucket.DeleteBucket(chanPointBuf.Bytes())
+		if err != nil {
+			return err
 		}
 
 		// Finally, create a summary of this channel in the closed
@@ -1353,19 +1353,29 @@ func putChanCommitments(chanBucket *bolt.Bucket, channel *OpenChannel) error {
 		return err
 	}
 
-	return putChanCommitment(chanBucket, &channel.LocalCommitment, false)
+	return putChanCommitment(chanBucket, &channel.RemoteCommitment, false)
 }
 
 func putChanRevocationState(chanBucket *bolt.Bucket, channel *OpenChannel) error {
-	// TODO(roasbeef): store next at the end?
-	//  * check buff when reading to see if there or not
 
 	var b bytes.Buffer
-	err := writeElements(&b,
-		channel.RemoteCurrentRevocation, channel.RemoteNextRevocation,
-		channel.RevocationProducer, channel.RevocationStore)
+	err := writeElements(
+		&b, channel.RemoteCurrentRevocation, channel.RevocationProducer,
+		channel.RevocationStore,
+	)
 	if err != nil {
 		return err
+	}
+
+	// TODO(roasbeef): don't keep producer on disk
+
+	// If the next revocation is present, which is only the case after the
+	// FundingLocked message has been sent, then we'll write it to disk.
+	if channel.RemoteNextRevocation != nil {
+		err = writeElements(&b, channel.RemoteNextRevocation)
+		if err != nil {
+			return err
+		}
 	}
 
 	return chanBucket.Put(revocationStateKey, b.Bytes())
@@ -1465,10 +1475,23 @@ func fetchChanRevocationState(chanBucket *bolt.Bucket, channel *OpenChannel) err
 	}
 	r := bytes.NewReader(revBytes)
 
-	return readElements(r,
-		&channel.RemoteCurrentRevocation, &channel.RemoteNextRevocation,
-		&channel.RevocationProducer, &channel.RevocationStore,
+	err := readElements(
+		r, &channel.RemoteCurrentRevocation, &channel.RevocationProducer,
+		&channel.RevocationStore,
 	)
+	if err != nil {
+		return err
+	}
+
+	// If there aren't any bytes left in the buffer, then we don't yet have
+	// the next remote revocation, so we can exit early here.
+	if r.Len() == 0 {
+		return nil
+	}
+
+	// Otherwise we'll read the next revocation for the remote party which
+	// is always the last item within the buffer.
+	return readElements(r, &channel.RemoteNextRevocation)
 }
 
 func deleteOpenChannel(nodeChanBucket, chanBucket *bolt.Bucket,
@@ -1495,7 +1518,8 @@ func deleteOpenChannel(nodeChanBucket, chanBucket *bolt.Bucket,
 		return err
 	}
 
-	return nodeChanBucket.Delete(chanPointBytes)
+	return nil
+
 }
 
 func makeLogKey(updateNum uint64) [8]byte {

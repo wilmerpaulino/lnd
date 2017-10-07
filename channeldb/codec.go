@@ -111,8 +111,13 @@ func writeElement(w io.Writer, element interface{}) error {
 	case shachain.Store:
 		return e.Encode(w)
 
-	case wire.MsgTx:
+	case *wire.MsgTx:
 		return e.Serialize(w)
+
+	case [32]byte:
+		if _, err := w.Write(e[:]); err != nil {
+			return err
+		}
 
 	case []byte:
 		if err := wire.WriteVarBytes(w, 0, e); err != nil {
@@ -167,7 +172,7 @@ func readElement(r io.Reader, element interface{}) error {
 
 	case *lnwire.ShortChannelID:
 		var a uint64
-		if err := binary.Read(r, byteOrder, a); err != nil {
+		if err := binary.Read(r, byteOrder, &a); err != nil {
 			return err
 		}
 		*e = lnwire.NewShortChanIDFromInt(a)
@@ -199,7 +204,7 @@ func readElement(r io.Reader, element interface{}) error {
 
 	case *btcutil.Amount:
 		var a uint64
-		if err := binary.Read(r, byteOrder, a); err != nil {
+		if err := binary.Read(r, byteOrder, &a); err != nil {
 			return err
 		}
 
@@ -207,7 +212,7 @@ func readElement(r io.Reader, element interface{}) error {
 
 	case *lnwire.MilliSatoshi:
 		var a uint64
-		if err := binary.Read(r, byteOrder, a); err != nil {
+		if err := binary.Read(r, byteOrder, &a); err != nil {
 			return err
 		}
 
@@ -225,7 +230,7 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 		*e = pubKey
 
-	case shachain.Producer:
+	case *shachain.Producer:
 		var root [32]byte
 		if _, err := io.ReadFull(r, root[:]); err != nil {
 			return err
@@ -237,22 +242,28 @@ func readElement(r io.Reader, element interface{}) error {
 			return err
 		}
 
-		e = producer
-	case shachain.Store:
+		*e = producer
+
+	case *shachain.Store:
 		store, err := shachain.NewRevocationStoreFromBytes(r)
 		if err != nil {
 			return err
 		}
 
-		e = store
+		*e = store
 
-	case *wire.MsgTx:
+	case **wire.MsgTx:
 		tx := wire.NewMsgTx(2)
 		if err := tx.Deserialize(r); err != nil {
 			return err
 		}
 
-		e = tx
+		*e = tx
+
+	case *[32]byte:
+		if _, err := io.ReadFull(r, e[:]); err != nil {
+			return err
+		}
 
 	case *[]byte:
 		bytes, err := wire.ReadVarBytes(r, 0, 66000, "[]byte")
@@ -260,7 +271,7 @@ func readElement(r io.Reader, element interface{}) error {
 			return err
 		}
 
-		e = &bytes
+		*e = bytes
 
 	case lnwire.Message:
 		msg, err := lnwire.ReadMessage(r, 0)

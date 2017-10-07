@@ -1,0 +1,851 @@
+=== RUN   TestOpenChannelPutGetDelete
+--- FAIL: TestOpenChannelPutGetDelete (0.01s)
+	channel_test.go:286: channel state doesn't match:: (*channeldb.OpenChannel)(0xc4203a0000)({
+		 ChanType: (channeldb.ChannelType) 0,
+		 ChainHash: (chainhash.Hash) (len=32 cap=32) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681,
+		 FundingOutpoint: (wire.OutPoint) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681:0,
+		 ShortChanID: (lnwire.ShortChannelID) {
+		  BlockHeight: (uint32) 1797375,
+		  TxIndex: (uint32) 10664529,
+		  TxPosition: (uint16) 31030
+		 },
+		 IsPending: (bool) true,
+		 IsInitiator: (bool) true,
+		 FundingBroadcastHeight: (uint32) 0,
+		 NumConfsRequired: (uint16) 4,
+		 IdentityPub: (*btcec.PublicKey)(0xc420010a20)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc42000d000)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc42000d020)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 Capacity: (btcutil.Amount) 0.0001 BTC,
+		 LocalChanCfg: (channeldb.ChannelConfig) {
+		  ChannelConstraints: (channeldb.ChannelConstraints) {
+		   DustLimit: (btcutil.Amount) 55770067919.47779 BTC,
+		   MaxPendingAmount: (lnwire.MilliSatoshi) 8674665223082153551 mSAT,
+		   ChanReserve: (btcutil.Amount) 61294846116.66146 BTC,
+		   MinHTLC: (lnwire.MilliSatoshi) 4037200794235010051 mSAT,
+		   MaxAcceptedHtlcs: (uint16) 34177
+		  },
+		  CsvDelay: (uint16) 53638,
+		  MultiSigKey: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  RevocationBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  PaymentBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  DelayBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>)
+		 },
+		 RemoteChanCfg: (channeldb.ChannelConfig) {
+		  ChannelConstraints: (channeldb.ChannelConstraints) {
+		   DustLimit: (btcutil.Amount) 6053946476.329698 BTC,
+		   MaxPendingAmount: (lnwire.MilliSatoshi) 1443635317331776148 mSAT,
+		   ChanReserve: (btcutil.Amount) 8943859491.831171 BTC,
+		   MinHTLC: (lnwire.MilliSatoshi) 2775422040480279449 mSAT,
+		   MaxAcceptedHtlcs: (uint16) 31942
+		  },
+		  CsvDelay: (uint16) 23215,
+		  MultiSigKey: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  RevocationBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  PaymentBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>),
+		  DelayBasePoint: (*btcec.PublicKey)(0xc420010a20)(<already shown>)
+		 },
+		 LocalCommitment: (channeldb.ChannelCommitment) {
+		  CommitHeight: (uint64) 0,
+		  LocalLogIndex: (uint64) 0,
+		  RemoteLogIndex: (uint64) 0,
+		  LocalBalance: (lnwire.MilliSatoshi) 9000 mSAT,
+		  RemoteBalance: (lnwire.MilliSatoshi) 3000 mSAT,
+		  CommitFee: (btcutil.Amount) 35109428754.14459 BTC,
+		  FeePerKw: (btcutil.Amount) 0.00005 BTC,
+		  TotalMSatSent: (lnwire.MilliSatoshi) 8 mSAT,
+		  TotalMSatReceived: (lnwire.MilliSatoshi) 2 mSAT,
+		  CommitTx: (*wire.MsgTx)(0x14d3c80)({
+		   Version: (int32) 1,
+		   TxIn: ([]*wire.TxIn) (len=1 cap=1) {
+		    (*wire.TxIn)(0x14d3e40)({
+		     PreviousOutPoint: (wire.OutPoint) 0000000000000000000000000000000000000000000000000000000000000000:4294967295,
+		     SignatureScript: ([]uint8) (len=7 cap=7) {
+		      00000000  04 31 dc 00 1b 01 62                              |.1....b|
+		     },
+		     Witness: (wire.TxWitness) <nil>,
+		     Sequence: (uint32) 4294967295
+		    })
+		   },
+		   TxOut: ([]*wire.TxOut) (len=1 cap=1) {
+		    (*wire.TxOut)(0x14d0360)({
+		     Value: (int64) 5000000000,
+		     PkScript: ([]uint8) (len=67 cap=67) {
+		      00000000  41 04 d6 4b df d0 9e b1  c5 fe 29 5a bd eb 1d ca  |A..K......)Z....|
+		      00000010  42 81 be 98 8e 2d a0 b6  c1 c6 a5 9d c2 26 c2 86  |B....-.......&..|
+		      00000020  24 e1 81 75 e8 51 c9 6b  97 3d 81 b0 1c c3 1f 04  |$..u.Q.k.=......|
+		      00000030  78 34 bc 06 d6 d6 ed f6  20 d1 84 24 1a 6a ed 8b  |x4...... ..$.j..|
+		      00000040  63 a6 ac                                          |c..|
+		     }
+		    })
+		   },
+		   LockTime: (uint32) 5
+		  }),
+		  CommitSig: ([]uint8) (len=71 cap=71) {
+		   00000000  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000010  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000020  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000030  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000040  01 01 01 01 01 01 01                              |.......|
+		  },
+		  Htlcs: ([]channeldb.HTLC) (len=1 cap=1) {
+		   (channeldb.HTLC) {
+		    Signature: ([]uint8) (len=71 cap=71) {
+		     00000000  30 45 02 21 00 8c e2 bc  69 28 1c e2 7d a0 7e 66  |0E.!....i(..}.~f|
+		     00000010  83 57 13 19 d1 8e 94 9d  df a2 96 5f b6 ca a1 bf  |.W........._....|
+		     00000020  03 14 f8 82 d7 02 20 29  91 05 48 1d 63 e0 f4 bc  |...... )..H.c...|
+		     00000030  2a 88 12 11 67 22 1b 67  00 d7 2a 0e ad 15 4c 03  |*...g".g..*...L.|
+		     00000040  be 69 6a 29 2d 24 ae                              |.ij)-$.|
+		    },
+		    RHash: ([32]uint8) (len=32 cap=32) {
+		     00000000  81 b6 37 d8 fc d2 c6 da  68 59 e6 96 31 13 a1 17  |..7.....hY..1...|
+		     00000010  0d e7 93 e4 b7 25 b8 4d  1e 0b 4c f9 9e c5 8c e9  |.....%.M..L.....|
+		    },
+		    Amt: (lnwire.MilliSatoshi) 10 mSAT,
+		    RefundTimeout: (uint32) 1,
+		    OutputIndex: (int32) 0,
+		    Incoming: (bool) true,
+		    OnionBlob: ([]uint8) (len=9 cap=16) {
+		     00000000  6f 6e 69 6f 6e 62 6c 6f  62                       |onionblob|
+		    },
+		    LogIndex: (uint64) 0
+		   }
+		  }
+		 },
+		 RemoteCommitment: (channeldb.ChannelCommitment) {
+		  CommitHeight: (uint64) 0,
+		  LocalLogIndex: (uint64) 0,
+		  RemoteLogIndex: (uint64) 0,
+		  LocalBalance: (lnwire.MilliSatoshi) 3000 mSAT,
+		  RemoteBalance: (lnwire.MilliSatoshi) 9000 mSAT,
+		  CommitFee: (btcutil.Amount) 29335688712.114456 BTC,
+		  FeePerKw: (btcutil.Amount) 0.00005 BTC,
+		  TotalMSatSent: (lnwire.MilliSatoshi) 2 mSAT,
+		  TotalMSatReceived: (lnwire.MilliSatoshi) 8 mSAT,
+		  CommitTx: (*wire.MsgTx)(0x14d3c80)({
+		   Version: (int32) 1,
+		   TxIn: ([]*wire.TxIn) (len=1 cap=1) {
+		    (*wire.TxIn)(0x14d3e40)({
+		     PreviousOutPoint: (wire.OutPoint) 0000000000000000000000000000000000000000000000000000000000000000:4294967295,
+		     SignatureScript: ([]uint8) (len=7 cap=7) {
+		      00000000  04 31 dc 00 1b 01 62                              |.1....b|
+		     },
+		     Witness: (wire.TxWitness) <nil>,
+		     Sequence: (uint32) 4294967295
+		    })
+		   },
+		   TxOut: ([]*wire.TxOut) (len=1 cap=1) {
+		    (*wire.TxOut)(0x14d0360)({
+		     Value: (int64) 5000000000,
+		     PkScript: ([]uint8) (len=67 cap=67) {
+		      00000000  41 04 d6 4b df d0 9e b1  c5 fe 29 5a bd eb 1d ca  |A..K......)Z....|
+		      00000010  42 81 be 98 8e 2d a0 b6  c1 c6 a5 9d c2 26 c2 86  |B....-.......&..|
+		      00000020  24 e1 81 75 e8 51 c9 6b  97 3d 81 b0 1c c3 1f 04  |$..u.Q.k.=......|
+		      00000030  78 34 bc 06 d6 d6 ed f6  20 d1 84 24 1a 6a ed 8b  |x4...... ..$.j..|
+		      00000040  63 a6 ac                                          |c..|
+		     }
+		    })
+		   },
+		   LockTime: (uint32) 5
+		  }),
+		  CommitSig: ([]uint8) (len=71 cap=71) {
+		   00000000  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000010  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000020  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000030  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000040  01 01 01 01 01 01 01                              |.......|
+		  },
+		  Htlcs: ([]channeldb.HTLC) (len=1 cap=1) {
+		   (channeldb.HTLC) {
+		    Signature: ([]uint8) (len=71 cap=71) {
+		     00000000  30 45 02 21 00 8c e2 bc  69 28 1c e2 7d a0 7e 66  |0E.!....i(..}.~f|
+		     00000010  83 57 13 19 d1 8e 94 9d  df a2 96 5f b6 ca a1 bf  |.W........._....|
+		     00000020  03 14 f8 82 d7 02 20 29  91 05 48 1d 63 e0 f4 bc  |...... )..H.c...|
+		     00000030  2a 88 12 11 67 22 1b 67  00 d7 2a 0e ad 15 4c 03  |*...g".g..*...L.|
+		     00000040  be 69 6a 29 2d 24 ae                              |.ij)-$.|
+		    },
+		    RHash: ([32]uint8) (len=32 cap=32) {
+		     00000000  81 b6 37 d8 fc d2 c6 da  68 59 e6 96 31 13 a1 17  |..7.....hY..1...|
+		     00000010  0d e7 93 e4 b7 25 b8 4d  1e 0b 4c f9 9e c5 8c e9  |.....%.M..L.....|
+		    },
+		    Amt: (lnwire.MilliSatoshi) 10 mSAT,
+		    RefundTimeout: (uint32) 1,
+		    OutputIndex: (int32) 0,
+		    Incoming: (bool) false,
+		    OnionBlob: ([]uint8) (len=9 cap=16) {
+		     00000000  6f 6e 69 6f 6e 62 6c 6f  62                       |onionblob|
+		    },
+		    LogIndex: (uint64) 0
+		   }
+		  }
+		 },
+		 RemoteCurrentRevocation: (*btcec.PublicKey)(0xc420010a20)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc42000d000)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc42000d020)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 RemoteNextRevocation: (*btcec.PublicKey)(0xc420010a20)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc42000d000)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc42000d020)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 RevocationProducer: (*shachain.RevocationProducer)(0xc42042a028)({
+		  root: (*shachain.element)(0xc42001e210)({
+		   index: (shachain.index) 0,
+		   hash: (chainhash.Hash) (len=32 cap=32) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681
+		  })
+		 }),
+		 RevocationStore: (*shachain.RevocationStore)(0xc42009e000)({
+		  lenBuckets: (uint8) 1,
+		  buckets: ([48]shachain.element) (len=48 cap=48) {
+		   (shachain.element) {
+		    index: (shachain.index) 281474976710655,
+		    hash: (chainhash.Hash) (len=32 cap=32) 4d607aef0949e38cc4db896d1894fd669456d3166c76bed514fb94578d9d7f53
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   }
+		  },
+		  index: (shachain.index) 281474976710654
+		 }),
+		 Db: (*channeldb.DB)(0xc420438140)(DB<"/var/folders/kz/g899kzn5077dg9xq4_2yq0880000gn/T/channeldb400626865/channel.db">),
+		 RWMutex: (sync.RWMutex) {
+		  w: (sync.Mutex) {
+		   state: (int32) 0,
+		   sema: (uint32) 0
+		  },
+		  writerSem: (uint32) 0,
+		  readerSem: (uint32) 0,
+		  readerCount: (int32) 0,
+		  readerWait: (int32) 0
+		 }
+		})
+		 vs (*channeldb.OpenChannel)(0xc4203a0280)({
+		 ChanType: (channeldb.ChannelType) 0,
+		 ChainHash: (chainhash.Hash) (len=32 cap=32) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681,
+		 FundingOutpoint: (wire.OutPoint) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681:0,
+		 ShortChanID: (lnwire.ShortChannelID) {
+		  BlockHeight: (uint32) 1797375,
+		  TxIndex: (uint32) 10664529,
+		  TxPosition: (uint16) 31030
+		 },
+		 IsPending: (bool) true,
+		 IsInitiator: (bool) true,
+		 FundingBroadcastHeight: (uint32) 0,
+		 NumConfsRequired: (uint16) 4,
+		 IdentityPub: (*btcec.PublicKey)(0xc4204386a0)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc4204386c0)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc4204386e0)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 Capacity: (btcutil.Amount) 0.0001 BTC,
+		 LocalChanCfg: (channeldb.ChannelConfig) {
+		  ChannelConstraints: (channeldb.ChannelConstraints) {
+		   DustLimit: (btcutil.Amount) 55770067919.47779 BTC,
+		   MaxPendingAmount: (lnwire.MilliSatoshi) 8674665223082153551 mSAT,
+		   ChanReserve: (btcutil.Amount) 61294846116.66146 BTC,
+		   MinHTLC: (lnwire.MilliSatoshi) 4037200794235010051 mSAT,
+		   MaxAcceptedHtlcs: (uint16) 34177
+		  },
+		  CsvDelay: (uint16) 53638,
+		  MultiSigKey: (*btcec.PublicKey)(0xc420438740)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc420438760)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc420438780)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  RevocationBasePoint: (*btcec.PublicKey)(0xc4204387a0)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc4204387c0)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc4204387e0)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  PaymentBasePoint: (*btcec.PublicKey)(0xc420438800)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc420438820)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc420438840)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  DelayBasePoint: (*btcec.PublicKey)(0xc420438860)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc420438880)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc4204388a0)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  })
+		 },
+		 RemoteChanCfg: (channeldb.ChannelConfig) {
+		  ChannelConstraints: (channeldb.ChannelConstraints) {
+		   DustLimit: (btcutil.Amount) 6053946476.329698 BTC,
+		   MaxPendingAmount: (lnwire.MilliSatoshi) 1443635317331776148 mSAT,
+		   ChanReserve: (btcutil.Amount) 8943859491.831171 BTC,
+		   MinHTLC: (lnwire.MilliSatoshi) 2775422040480279449 mSAT,
+		   MaxAcceptedHtlcs: (uint16) 31942
+		  },
+		  CsvDelay: (uint16) 23215,
+		  MultiSigKey: (*btcec.PublicKey)(0xc4204388c0)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc4204388e0)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc420438900)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  RevocationBasePoint: (*btcec.PublicKey)(0xc420438920)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc420438940)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc420438960)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  PaymentBasePoint: (*btcec.PublicKey)(0xc420438980)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc4204389a0)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc4204389c0)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  }),
+		  DelayBasePoint: (*btcec.PublicKey)(0xc4204389e0)({
+		   Curve: (elliptic.Curve) <nil>,
+		   X: (*big.Int)(0xc420438a00)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		   Y: (*big.Int)(0xc420438a20)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		  })
+		 },
+		 LocalCommitment: (channeldb.ChannelCommitment) {
+		  CommitHeight: (uint64) 0,
+		  LocalLogIndex: (uint64) 0,
+		  RemoteLogIndex: (uint64) 0,
+		  LocalBalance: (lnwire.MilliSatoshi) 9000 mSAT,
+		  RemoteBalance: (lnwire.MilliSatoshi) 3000 mSAT,
+		  CommitFee: (btcutil.Amount) 35109428754.14459 BTC,
+		  FeePerKw: (btcutil.Amount) 0.00005 BTC,
+		  TotalMSatSent: (lnwire.MilliSatoshi) 8 mSAT,
+		  TotalMSatReceived: (lnwire.MilliSatoshi) 2 mSAT,
+		  CommitTx: (*wire.MsgTx)(0xc42041a680)({
+		   Version: (int32) 1,
+		   TxIn: ([]*wire.TxIn) (len=1 cap=1) {
+		    (*wire.TxIn)(0xc42006a0c0)({
+		     PreviousOutPoint: (wire.OutPoint) 0000000000000000000000000000000000000000000000000000000000000000:4294967295,
+		     SignatureScript: ([]uint8) (len=7 cap=7) {
+		      00000000  04 31 dc 00 1b 01 62                              |.1....b|
+		     },
+		     Witness: (wire.TxWitness) <nil>,
+		     Sequence: (uint32) 4294967295
+		    })
+		   },
+		   TxOut: ([]*wire.TxOut) (len=1 cap=1) {
+		    (*wire.TxOut)(0xc420438a60)({
+		     Value: (int64) 5000000000,
+		     PkScript: ([]uint8) (len=67 cap=67) {
+		      00000000  41 04 d6 4b df d0 9e b1  c5 fe 29 5a bd eb 1d ca  |A..K......)Z....|
+		      00000010  42 81 be 98 8e 2d a0 b6  c1 c6 a5 9d c2 26 c2 86  |B....-.......&..|
+		      00000020  24 e1 81 75 e8 51 c9 6b  97 3d 81 b0 1c c3 1f 04  |$..u.Q.k.=......|
+		      00000030  78 34 bc 06 d6 d6 ed f6  20 d1 84 24 1a 6a ed 8b  |x4...... ..$.j..|
+		      00000040  63 a6 ac                                          |c..|
+		     }
+		    })
+		   },
+		   LockTime: (uint32) 5
+		  }),
+		  CommitSig: ([]uint8) (len=71 cap=71) {
+		   00000000  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000010  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000020  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000030  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000040  01 01 01 01 01 01 01                              |.......|
+		  },
+		  Htlcs: ([]channeldb.HTLC) (len=1 cap=1) {
+		   (channeldb.HTLC) {
+		    Signature: ([]uint8) (len=71 cap=71) {
+		     00000000  30 45 02 21 00 8c e2 bc  69 28 1c e2 7d a0 7e 66  |0E.!....i(..}.~f|
+		     00000010  83 57 13 19 d1 8e 94 9d  df a2 96 5f b6 ca a1 bf  |.W........._....|
+		     00000020  03 14 f8 82 d7 02 20 29  91 05 48 1d 63 e0 f4 bc  |...... )..H.c...|
+		     00000030  2a 88 12 11 67 22 1b 67  00 d7 2a 0e ad 15 4c 03  |*...g".g..*...L.|
+		     00000040  be 69 6a 29 2d 24 ae                              |.ij)-$.|
+		    },
+		    RHash: ([32]uint8) (len=32 cap=32) {
+		     00000000  81 b6 37 d8 fc d2 c6 da  68 59 e6 96 31 13 a1 17  |..7.....hY..1...|
+		     00000010  0d e7 93 e4 b7 25 b8 4d  1e 0b 4c f9 9e c5 8c e9  |.....%.M..L.....|
+		    },
+		    Amt: (lnwire.MilliSatoshi) 10 mSAT,
+		    RefundTimeout: (uint32) 1,
+		    OutputIndex: (int32) 0,
+		    Incoming: (bool) true,
+		    OnionBlob: ([]uint8) (len=9 cap=9) {
+		     00000000  6f 6e 69 6f 6e 62 6c 6f  62                       |onionblob|
+		    },
+		    LogIndex: (uint64) 0
+		   }
+		  }
+		 },
+		 RemoteCommitment: (channeldb.ChannelCommitment) {
+		  CommitHeight: (uint64) 0,
+		  LocalLogIndex: (uint64) 0,
+		  RemoteLogIndex: (uint64) 0,
+		  LocalBalance: (lnwire.MilliSatoshi) 3000 mSAT,
+		  RemoteBalance: (lnwire.MilliSatoshi) 9000 mSAT,
+		  CommitFee: (btcutil.Amount) 29335688712.114456 BTC,
+		  FeePerKw: (btcutil.Amount) 0.00005 BTC,
+		  TotalMSatSent: (lnwire.MilliSatoshi) 2 mSAT,
+		  TotalMSatReceived: (lnwire.MilliSatoshi) 8 mSAT,
+		  CommitTx: (*wire.MsgTx)(0xc42041a6c0)({
+		   Version: (int32) 1,
+		   TxIn: ([]*wire.TxIn) (len=1 cap=1) {
+		    (*wire.TxIn)(0xc42006a1e0)({
+		     PreviousOutPoint: (wire.OutPoint) 0000000000000000000000000000000000000000000000000000000000000000:4294967295,
+		     SignatureScript: ([]uint8) (len=7 cap=7) {
+		      00000000  04 31 dc 00 1b 01 62                              |.1....b|
+		     },
+		     Witness: (wire.TxWitness) <nil>,
+		     Sequence: (uint32) 4294967295
+		    })
+		   },
+		   TxOut: ([]*wire.TxOut) (len=1 cap=1) {
+		    (*wire.TxOut)(0xc420438aa0)({
+		     Value: (int64) 5000000000,
+		     PkScript: ([]uint8) (len=67 cap=67) {
+		      00000000  41 04 d6 4b df d0 9e b1  c5 fe 29 5a bd eb 1d ca  |A..K......)Z....|
+		      00000010  42 81 be 98 8e 2d a0 b6  c1 c6 a5 9d c2 26 c2 86  |B....-.......&..|
+		      00000020  24 e1 81 75 e8 51 c9 6b  97 3d 81 b0 1c c3 1f 04  |$..u.Q.k.=......|
+		      00000030  78 34 bc 06 d6 d6 ed f6  20 d1 84 24 1a 6a ed 8b  |x4...... ..$.j..|
+		      00000040  63 a6 ac                                          |c..|
+		     }
+		    })
+		   },
+		   LockTime: (uint32) 5
+		  }),
+		  CommitSig: ([]uint8) (len=71 cap=71) {
+		   00000000  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000010  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000020  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000030  01 01 01 01 01 01 01 01  01 01 01 01 01 01 01 01  |................|
+		   00000040  01 01 01 01 01 01 01                              |.......|
+		  },
+		  Htlcs: ([]channeldb.HTLC) (len=1 cap=1) {
+		   (channeldb.HTLC) {
+		    Signature: ([]uint8) (len=71 cap=71) {
+		     00000000  30 45 02 21 00 8c e2 bc  69 28 1c e2 7d a0 7e 66  |0E.!....i(..}.~f|
+		     00000010  83 57 13 19 d1 8e 94 9d  df a2 96 5f b6 ca a1 bf  |.W........._....|
+		     00000020  03 14 f8 82 d7 02 20 29  91 05 48 1d 63 e0 f4 bc  |...... )..H.c...|
+		     00000030  2a 88 12 11 67 22 1b 67  00 d7 2a 0e ad 15 4c 03  |*...g".g..*...L.|
+		     00000040  be 69 6a 29 2d 24 ae                              |.ij)-$.|
+		    },
+		    RHash: ([32]uint8) (len=32 cap=32) {
+		     00000000  81 b6 37 d8 fc d2 c6 da  68 59 e6 96 31 13 a1 17  |..7.....hY..1...|
+		     00000010  0d e7 93 e4 b7 25 b8 4d  1e 0b 4c f9 9e c5 8c e9  |.....%.M..L.....|
+		    },
+		    Amt: (lnwire.MilliSatoshi) 10 mSAT,
+		    RefundTimeout: (uint32) 1,
+		    OutputIndex: (int32) 0,
+		    Incoming: (bool) false,
+		    OnionBlob: ([]uint8) (len=9 cap=9) {
+		     00000000  6f 6e 69 6f 6e 62 6c 6f  62                       |onionblob|
+		    },
+		    LogIndex: (uint64) 0
+		   }
+		  }
+		 },
+		 RemoteCurrentRevocation: (*btcec.PublicKey)(0xc420438ae0)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc420438b00)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc420438b20)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 RemoteNextRevocation: (*btcec.PublicKey)(0xc420438b40)({
+		  Curve: (elliptic.Curve) <nil>,
+		  X: (*big.Int)(0xc420438b60)(13543102295019135613709126520410547890761020539070558107181201598072050614222),
+		  Y: (*big.Int)(0xc420438b80)(89450329400725655129534639445783104875402151417259033827327031974360749943809)
+		 }),
+		 RevocationProducer: (*shachain.RevocationProducer)(0xc42042a070)({
+		  root: (*shachain.element)(0xc42001f440)({
+		   index: (shachain.index) 0,
+		   hash: (chainhash.Hash) (len=32 cap=32) e98cc59ef94c0b1e4db825b7e493e70d17a1133196e65968dac6d2fcd837b681
+		  })
+		 }),
+		 RevocationStore: (*shachain.RevocationStore)(0xc42009e800)({
+		  lenBuckets: (uint8) 1,
+		  buckets: ([48]shachain.element) (len=48 cap=48) {
+		   (shachain.element) {
+		    index: (shachain.index) 281474976710655,
+		    hash: (chainhash.Hash) (len=32 cap=32) 4d607aef0949e38cc4db896d1894fd669456d3166c76bed514fb94578d9d7f53
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   },
+		   (shachain.element) {
+		    index: (shachain.index) 0,
+		    hash: (chainhash.Hash) (len=32 cap=32) 0000000000000000000000000000000000000000000000000000000000000000
+		   }
+		  },
+		  index: (shachain.index) 281474976710654
+		 }),
+		 Db: (*channeldb.DB)(<nil>),
+		 RWMutex: (sync.RWMutex) {
+		  w: (sync.Mutex) {
+		   state: (int32) 0,
+		   sema: (uint32) 0
+		  },
+		  writerSem: (uint32) 0,
+		  readerSem: (uint32) 0,
+		  readerCount: (int32) 0,
+		  readerWait: (int32) 0
+		 }
+		})
+FAIL
+exit status 1
+FAIL	github.com/lightningnetwork/lnd/channeldb	0.048s
