@@ -273,6 +273,8 @@ type ChannelCommitment struct {
 // supported. Each partial write due to a state update appends the new update
 // to an on-disk log, which can then subsequently be queried in order to
 // "time-travel" to a prior state.
+//
+// TODO(roasbeef): also add chain hash key
 type OpenChannel struct {
 	// ChanType denotes which type of channel this is.
 	ChanType ChannelType
