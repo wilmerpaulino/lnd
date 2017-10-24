@@ -273,13 +273,13 @@ func readElement(r io.Reader, element interface{}) error {
 
 		*e = bytes
 
-	case lnwire.Message:
+	case *lnwire.Message:
 		msg, err := lnwire.ReadMessage(r, 0)
 		if err != nil {
 			return err
 		}
 
-		e = msg
+		*e = msg
 
 	case *ClosureType:
 		if err := binary.Read(r, byteOrder, e); err != nil {

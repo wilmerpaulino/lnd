@@ -375,7 +375,7 @@ func (d *DB) FetchClosedChannels(pendingOnly bool) ([]*ChannelCloseSummary, erro
 			// If the query specified to only include pending
 			// channels, then we'll skip any channels which aren't
 			// currently pending.
-			if chanSummary.IsPending {
+			if !chanSummary.IsPending && pendingOnly {
 				return nil
 			}
 
@@ -407,16 +407,28 @@ func (d *DB) MarkChanFullyClosed(chanPoint *wire.OutPoint) error {
 			return err
 		}
 
-		chanSummary := closedChanBucket.Get(chanID)
-		if chanSummary == nil {
+		chanSummaryBytes := closedChanBucket.Get(chanID)
+		if chanSummaryBytes == nil {
 			return fmt.Errorf("no closed channel by that chanID found")
 		}
 
-		newSummary := make([]byte, len(chanSummary))
-		copy(newSummary[:], chanSummary[:])
-		newSummary[0] = 0x00
+		chanSummaryReader := bytes.NewReader(chanSummaryBytes)
+		chanSummary, err := deserializeCloseChannelSummary(
+			chanSummaryReader,
+		)
+		if err != nil {
+			return err
+		}
 
-		return closedChanBucket.Put(chanID, newSummary)
+		chanSummary.IsPending = false
+
+		var newSummary bytes.Buffer
+		err = serializeChannelCloseSummary(&newSummary, chanSummary)
+		if err != nil {
+			return err
+		}
+
+		return closedChanBucket.Put(chanID, newSummary.Bytes())
 	})
 }
 

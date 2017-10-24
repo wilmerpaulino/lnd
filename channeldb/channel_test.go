@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
@@ -339,8 +340,9 @@ func TestOpenChannelPutGetDelete(t *testing.T) {
 
 func assertCommitmentEqual(t *testing.T, a, b *ChannelCommitment) {
 	if !reflect.DeepEqual(a, b) {
-		t.Fatalf("commitments don't match: %v vs %v",
-			spew.Sdump(a), spew.Sdump(b))
+		_, _, line, _ := runtime.Caller(1)
+		t.Fatalf("line %v: commitments don't match: %v vs %v",
+			line, spew.Sdump(a), spew.Sdump(b))
 	}
 }
 
@@ -381,7 +383,11 @@ func TestChannelStateTransition(t *testing.T) {
 			RHash:         key,
 			RefundTimeout: i,
 			OutputIndex:   int32(i * 3),
+			LogIndex:      uint64(i * 2),
+			HtlcIndex:     uint64(i),
 		}
+		htlc.OnionBlob = make([]byte, 10)
+		copy(htlc.OnionBlob[:], bytes.Repeat([]byte{2}, 10))
 		htlcs = append(htlcs, htlc)
 		htlcAmt += htlc.Amt
 	}
@@ -395,8 +401,10 @@ func TestChannelStateTransition(t *testing.T) {
 	newTx.TxIn[0].Sequence = newSequence
 	commitment := ChannelCommitment{
 		CommitHeight:      1,
-		LocalLogIndex:     1,
+		LocalLogIndex:     2,
+		LocalHtlcIndex:    1,
 		RemoteLogIndex:    2,
+		RemoteHtlcIndex:   1,
 		LocalBalance:      lnwire.MilliSatoshi(1e8),
 		RemoteBalance:     lnwire.MilliSatoshi(1e8),
 		CommitFee:         55,
@@ -772,7 +780,7 @@ func TestFetchClosedChannels(t *testing.T) {
 			spew.Sdump(summary), spew.Sdump(closed[0]))
 	}
 
-	// Mark the channel as fully closed
+	// Mark the channel as fully closed.
 	err = cdb.MarkChanFullyClosed(&state.FundingOutpoint)
 	if err != nil {
 		t.Fatalf("failed fully closing channel: %v", err)

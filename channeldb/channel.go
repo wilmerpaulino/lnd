@@ -199,11 +199,23 @@ type ChannelCommitment struct {
 	// monotonically increasing.
 	CommitHeight uint64
 
-	// LocalLogIndex...
+	// LocalLogIndex is the cumulative log index index of the local node at
+	// this point in the commitment chain. This value will be incremented
+	// for each _update_ added to the local update log.
 	LocalLogIndex uint64
 
-	// RemoteLogIndex...
+	// LocalHtlcIndex is the current local running HTLC index. This value
+	// will be incremented for each outgoing HTLC the local node offers.
+	LocalHtlcIndex uint64
+
+	// RemoteLogIndex is the cumulative log index index of the remote node
+	// at this point in the commitment chain. This value will be
+	// incremented for each _update_ added to the remote update log.
 	RemoteLogIndex uint64
+
+	// RemoteHtlcIndex is the current remote running HTLC index. This value
+	// will be incremented for each outgoing HTLC the remote node offers.
+	RemoteHtlcIndex uint64
 
 	// LocalBalance is the current available settled balance within the
 	// channel directly spendable by us.
@@ -427,6 +439,7 @@ func readChanBucket(tx *bolt.Tx, nodeKey *btcec.PublicKey,
 	if err := writeOutpoint(&chanPointBuf, outPoint); err != nil {
 		return nil, err
 	}
+
 	chanBucket := nodeChanBucket.Bucket(chanPointBuf.Bytes())
 	if chanBucket == nil {
 		return nil, ErrNoActiveChannels
@@ -601,9 +614,11 @@ func (c *OpenChannel) UpdateCommitment(newCommitment *ChannelCommitment) error {
 	return nil
 }
 
-// HTLC is the on-disk representation of a hash time-locked contract. HTLCs
-// are contained within ChannelDeltas which encode the current state of the
+// HTLC is the on-disk representation of a hash time-locked contract. HTLCs are
+// contained within ChannelDeltas which encode the current state of the
 // commitment between state updates.
+//
+// TODO(roasbeef): save space by using smaller ints at tail end?
 type HTLC struct {
 	// Signature is the signature for the second level covenant transaction
 	// for this HTLC. The second level transaction is a timeout tx in the
@@ -635,7 +650,15 @@ type HTLC struct {
 	// routing.
 	OnionBlob []byte
 
-	// LogIndex...
+	// HtlcIndex is the HTLC counter index of this active, outstanding
+	// HTLC. This differs from the LogIndex, as the HtlcIndex is only
+	// incremented for each offered HTLC, while they LogIndex is
+	// incremented for each update (includes settle+fail).
+	HtlcIndex uint64
+
+	// LogIndex is the cumulative log index of this this HTLC. This differs
+	// from the HtlcIndex as this will be incremented for each new log
+	// update added.
 	LogIndex uint64
 }
 
@@ -649,7 +672,7 @@ func serializeHtlcs(b io.Writer, htlcs []HTLC) error {
 		if err := writeElements(b,
 			htlc.Signature, htlc.RHash, htlc.Amt, htlc.RefundTimeout,
 			htlc.OutputIndex, htlc.Incoming, htlc.OnionBlob[:],
-			htlc.LogIndex,
+			htlc.HtlcIndex, htlc.LogIndex,
 		); err != nil {
 			return err
 		}
@@ -664,13 +687,18 @@ func deserializeHtlcs(r io.Reader) ([]HTLC, error) {
 		return nil, err
 	}
 
-	htlcs := make([]HTLC, numHtlcs)
+	var htlcs []HTLC
+	if numHtlcs == 0 {
+		return htlcs, nil
+	}
+
+	htlcs = make([]HTLC, numHtlcs)
 	for i := uint16(0); i < numHtlcs; i++ {
 		if err := readElements(r,
 			&htlcs[i].Signature, &htlcs[i].RHash, &htlcs[i].Amt,
 			&htlcs[i].RefundTimeout, &htlcs[i].OutputIndex,
 			&htlcs[i].Incoming, &htlcs[i].OnionBlob,
-			&htlcs[i].LogIndex,
+			&htlcs[i].HtlcIndex, &htlcs[i].LogIndex,
 		); err != nil {
 			return htlcs, err
 		}
@@ -693,20 +721,26 @@ func (h *HTLC) Copy() HTLC {
 	return clone
 }
 
-// LogUpdate...
+// LogUpdate represents a pending update to the remote commitment chain. The
+// log update may be an add, fail, or settle entry. We maintain this data in
+// order to be able to properly retransmit our proposed
+// state if necessary.
 type LogUpdate struct {
-	// LogIndex...
+	// LogIndex is the log index of this proposed commitment update entry.
 	LogIndex uint64
 
-	// Message is..j
+	// UpdateMsg is the update message that was included within the our
+	// local update log. The LogIndex value denotes the log index of this
+	// update which will be used when restoring our local update log if
+	// we're left with a dangling update on restart.
 	UpdateMsg lnwire.Message
 }
 
 // CommitDiff represents the delta needed to apply the state transition between
-// two subsequewnt commitment states. Given state N and state N+1, one is able
+// two subsequent commitment states. Given state N and state N+1, one is able
 // to apply the set of messages contained within the CommitDiff to N to arrive
-// at state N+1. Each time a new commitmetn is extended, we'll write a new
-// commitment (along with the full comitment state) to disk so we can
+// at state N+1. Each time a new commitment is extended, we'll write a new
+// commitment (along with the full commitment state) to disk so we can
 // re-transmit the state in the case of a connection loss or message drop.
 type CommitDiff struct {
 	// ChannelCommitment is the full commitment state that one would arrive
@@ -718,10 +752,8 @@ type CommitDiff struct {
 
 	// LogUpdates is the set of messages sent prior to the commitment state
 	// transition in question. Upon reconnection, if we detect that they
-	// don't have the commitment, then we re-send thsis along with the
+	// don't have the commitment, then we re-send this along with the
 	// proper signature.
-	//
-	// TODO(roasbeef): also need the index along with?
 	LogUpdates []LogUpdate
 }
 
@@ -860,7 +892,9 @@ func (c *OpenChannel) InsertNextRevocation(revKey *btcec.PublicKey) error {
 //
 // TODO(roasbeef): pass in next next revocation?
 func (c *OpenChannel) AdvanceCommitChainTail() error {
+
 	var newRemoteCommit *ChannelCommitment
+
 	err := c.Db.Update(func(tx *bolt.Tx) error {
 		chanBucket, err := readChanBucket(tx, c.IdentityPub,
 			&c.FundingOutpoint)
@@ -1131,11 +1165,13 @@ func (c *OpenChannel) CloseChannel(summary *ChannelCloseSummary) error {
 		if openChanBucket == nil {
 			return ErrNoChanDBExists
 		}
+
 		nodePub := c.IdentityPub.SerializeCompressed()
 		nodeChanBucket := openChanBucket.Bucket(nodePub)
 		if nodeChanBucket == nil {
 			return ErrNoActiveChannels
 		}
+
 		var chanPointBuf bytes.Buffer
 		chanPointBuf.Grow(outPointSize)
 		err := writeOutpoint(&chanPointBuf, &c.FundingOutpoint)
@@ -1149,8 +1185,7 @@ func (c *OpenChannel) CloseChannel(summary *ChannelCloseSummary) error {
 
 		// Now that the index to this channel has been deleted, purge
 		// the remaining channel metadata from the database.
-		err = deleteOpenChannel(nodeChanBucket, chanBucket,
-			chanPointBuf.Bytes())
+		err = deleteOpenChannel(chanBucket, chanPointBuf.Bytes())
 		if err != nil {
 			return err
 		}
@@ -1159,7 +1194,6 @@ func (c *OpenChannel) CloseChannel(summary *ChannelCloseSummary) error {
 		// information stored within the revocation log.
 		logBucket := chanBucket.Bucket(revocationLogBucket)
 		if logBucket != nil {
-			fmt.Println("TRYING")
 			err := wipeChannelLogEntries(logBucket)
 			if err != nil {
 				return err
@@ -1318,7 +1352,8 @@ func putChanInfo(chanBucket *bolt.Bucket, channel *OpenChannel) error {
 
 func serializeChanCommit(w io.Writer, c *ChannelCommitment) error {
 	if err := writeElements(w,
-		c.CommitHeight, c.LocalLogIndex, c.RemoteLogIndex, c.LocalBalance,
+		c.CommitHeight, c.LocalLogIndex, c.LocalHtlcIndex,
+		c.RemoteLogIndex, c.RemoteHtlcIndex, c.LocalBalance,
 		c.RemoteBalance, c.CommitFee, c.FeePerKw, c.TotalMSatSent,
 		c.TotalMSatReceived, c.CommitTx, c.CommitSig,
 	); err != nil {
@@ -1419,9 +1454,10 @@ func deserializeChanCommit(r io.Reader) (ChannelCommitment, error) {
 	var c ChannelCommitment
 
 	err := readElements(r,
-		&c.CommitHeight, &c.LocalLogIndex, &c.RemoteLogIndex,
-		&c.LocalBalance, &c.RemoteBalance, &c.CommitFee, &c.FeePerKw,
-		&c.TotalMSatSent, &c.TotalMSatReceived, &c.CommitTx, &c.CommitSig,
+		&c.CommitHeight, &c.LocalLogIndex, &c.LocalHtlcIndex, &c.RemoteLogIndex,
+		&c.RemoteHtlcIndex, &c.LocalBalance, &c.RemoteBalance,
+		&c.CommitFee, &c.FeePerKw, &c.TotalMSatSent, &c.TotalMSatReceived,
+		&c.CommitTx, &c.CommitSig,
 	)
 	if err != nil {
 		return c, err
@@ -1494,8 +1530,7 @@ func fetchChanRevocationState(chanBucket *bolt.Bucket, channel *OpenChannel) err
 	return readElements(r, &channel.RemoteNextRevocation)
 }
 
-func deleteOpenChannel(nodeChanBucket, chanBucket *bolt.Bucket,
-	chanPointBytes []byte) error {
+func deleteOpenChannel(chanBucket *bolt.Bucket, chanPointBytes []byte) error {
 
 	if err := chanBucket.Delete(chanInfoKey); err != nil {
 		return err
@@ -1514,8 +1549,8 @@ func deleteOpenChannel(nodeChanBucket, chanBucket *bolt.Bucket,
 		return err
 	}
 
-	if err := chanBucket.Delete(commitDiffKey); err != nil {
-		return err
+	if diff := chanBucket.Get(commitDiffKey); diff != nil {
+		return chanBucket.Delete(commitDiffKey)
 	}
 
 	return nil
