@@ -808,8 +808,8 @@ func (l *LightningWallet) handleContributionMsg(req *addContributionMsg) {
 	}
 
 	// With the funding tx complete, create both commitment transactions.
-	localBalance := pendingReservation.partialState.LocalBalance.ToSatoshis()
-	remoteBalance := pendingReservation.partialState.RemoteBalance.ToSatoshis()
+	localBalance := pendingReservation.partialState.LocalCommitment.LocalBalance.ToSatoshis()
+	remoteBalance := pendingReservation.partialState.LocalCommitment.RemoteBalance.ToSatoshis()
 	ourCommitTx, theirCommitTx, err := CreateCommitmentTxns(
 		localBalance, remoteBalance, ourContribution.ChannelConfig,
 		theirContribution.ChannelConfig,
@@ -860,7 +860,7 @@ func (l *LightningWallet) handleContributionMsg(req *addContributionMsg) {
 
 	// Record newly available information within the open channel state.
 	chanState.FundingOutpoint = *fundingOutpoint
-	chanState.CommitTx = *ourCommitTx
+	chanState.LocalCommitment.CommitTx = ourCommitTx
 
 	// Generate a signature for their version of the initial commitment
 	// transaction.
@@ -1002,7 +1002,7 @@ func (l *LightningWallet) handleFundingCounterPartySigs(msg *addCounterPartySigs
 	// At this point, we can also record and verify their signature for our
 	// commitment transaction.
 	res.theirCommitmentSig = msg.theirCommitmentSig
-	commitTx := res.partialState.CommitTx
+	commitTx := res.partialState.LocalCommitment.CommitTx
 	ourKey := res.ourContribution.MultiSigKey
 	theirKey := res.theirContribution.MultiSigKey
 
@@ -1020,9 +1020,9 @@ func (l *LightningWallet) handleFundingCounterPartySigs(msg *addCounterPartySigs
 	// Next, create the spending scriptSig, and then verify that the script
 	// is complete, allowing us to spend from the funding transaction.
 	channelValue := int64(res.partialState.Capacity)
-	hashCache := txscript.NewTxSigHashes(&commitTx)
+	hashCache := txscript.NewTxSigHashes(commitTx)
 	sigHash, err := txscript.CalcWitnessSigHash(witnessScript, hashCache,
-		txscript.SigHashAll, &commitTx, 0, channelValue)
+		txscript.SigHashAll, commitTx, 0, channelValue)
 	if err != nil {
 		msg.err <- err
 		msg.completeChan <- nil
@@ -1042,7 +1042,7 @@ func (l *LightningWallet) handleFundingCounterPartySigs(msg *addCounterPartySigs
 		msg.completeChan <- nil
 		return
 	}
-	res.partialState.CommitSig = theirCommitSig
+	res.partialState.LocalCommitment.CommitSig = theirCommitSig
 
 	// Funding complete, this entry can be removed from limbo.
 	l.limboMtx.Lock()
@@ -1122,8 +1122,8 @@ func (l *LightningWallet) handleSingleFunderSigs(req *addSingleFunderSigsMsg) {
 	// Now that we have the funding outpoint, we can generate both versions
 	// of the commitment transaction, and generate a signature for the
 	// remote node's commitment transactions.
-	localBalance := pendingReservation.partialState.LocalBalance.ToSatoshis()
-	remoteBalance := pendingReservation.partialState.RemoteBalance.ToSatoshis()
+	localBalance := pendingReservation.partialState.LocalCommitment.LocalBalance.ToSatoshis()
+	remoteBalance := pendingReservation.partialState.LocalCommitment.RemoteBalance.ToSatoshis()
 	ourCommitTx, theirCommitTx, err := CreateCommitmentTxns(
 		localBalance, remoteBalance,
 		pendingReservation.ourContribution.ChannelConfig,
@@ -1151,7 +1151,7 @@ func (l *LightningWallet) handleSingleFunderSigs(req *addSingleFunderSigsMsg) {
 	// without further synchronization.
 	txsort.InPlaceSort(ourCommitTx)
 	txsort.InPlaceSort(theirCommitTx)
-	chanState.CommitTx = *ourCommitTx
+	chanState.LocalCommitment.CommitTx = ourCommitTx
 
 	channelValue := int64(pendingReservation.partialState.Capacity)
 	hashCache := txscript.NewTxSigHashes(ourCommitTx)
@@ -1185,7 +1185,7 @@ func (l *LightningWallet) handleSingleFunderSigs(req *addSingleFunderSigsMsg) {
 		req.completeChan <- nil
 		return
 	}
-	chanState.CommitSig = req.theirCommitmentSig
+	chanState.LocalCommitment.CommitSig = req.theirCommitmentSig
 
 	// With their signature for our version of the commitment transactions
 	// verified, we can now generate a signature for their version,

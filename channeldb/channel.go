@@ -240,6 +240,8 @@ type ChannelCommitment struct {
 
 	// TotalMSatSent is the total number of milli-satoshis we've sent
 	// within this channel.
+	//
+	// TODO(roasbeef): make into open chan level again?
 	TotalMSatSent lnwire.MilliSatoshi
 
 	// TotalMSatReceived is the total number of milli-satoshis we've
@@ -330,6 +332,8 @@ type OpenChannel struct {
 	RemoteChanCfg ChannelConfig
 
 	// LocalCommitment...
+	//
+	// TODO(roasbeef): comment
 	LocalCommitment ChannelCommitment
 
 	// RemoteCommitment...
@@ -752,6 +756,9 @@ type CommitDiff struct {
 	// TODO(roasbeef): should contain OUR sig
 	Commitment ChannelCommitment
 
+	// CommitSig...
+	CommitSig *lnwire.CommitSig
+
 	// LogUpdates is the set of messages sent prior to the commitment state
 	// transition in question. Upon reconnection, if we detect that they
 	// don't have the commitment, then we re-send this along with the
@@ -761,6 +768,10 @@ type CommitDiff struct {
 
 func serializeCommitDiff(w io.Writer, diff *CommitDiff) error {
 	if err := serializeChanCommit(w, &diff.Commitment); err != nil {
+		return err
+	}
+
+	if err := diff.CommitSig.Encode(w, 0); err != nil {
 		return err
 	}
 
@@ -786,6 +797,15 @@ func deserializeCommitDiff(r io.Reader) (*CommitDiff, error) {
 
 	d.Commitment, err = deserializeChanCommit(r)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := readElement(r, &d.CommitSig); err != nil {
+		return nil, err
+	}
+
+	d.CommitSig = &lnwire.CommitSig{}
+	if err := d.CommitSig.Decode(r, 0); err != nil {
 		return nil, err
 	}
 
@@ -826,7 +846,7 @@ func (c *OpenChannel) AppendRemoteCommitChain(diff *CommitDiff) error {
 	})
 }
 
-// CommitChainTip...
+// RemoteCommitChainTip...
 func (c *OpenChannel) RemoteCommitChainTip() (*CommitDiff, error) {
 	var cd *CommitDiff
 	err := c.Db.View(func(tx *bolt.Tx) error {
@@ -926,7 +946,7 @@ func (c *OpenChannel) AdvanceCommitChainTail() error {
 
 		// Before we append this revoked state to the revocation log,
 		// we'll swap out what's currently the tail of the commit tip,
-		// with the current locked-in commitment for the rmote party.
+		// with the current locked-in commitment for the remote party.
 		tipBytes := chanBucket.Get(commitDiffKey)
 		tipReader := bytes.NewReader(tipBytes)
 		newCommit, err := deserializeCommitDiff(tipReader)
@@ -958,7 +978,7 @@ func (c *OpenChannel) AdvanceCommitChainTail() error {
 	}
 
 	// With the db transaction complete, we'll swap over the in-memory
-	// pointer of the new remote commitment, which was previously the tiop
+	// pointer of the new remote commitment, which was previously the tip
 	// of the commit chain.
 	c.RemoteCommitment = *newRemoteCommit
 
