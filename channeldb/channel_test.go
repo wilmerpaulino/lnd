@@ -158,37 +158,35 @@ func createTestChannelState(cdb *DB) (*OpenChannel, error) {
 	chanID := lnwire.NewShortChanIDFromInt(uint64(rand.Int63()))
 
 	return &OpenChannel{
-		ChanType:        SingleFunder,
-		ChainHash:       key,
-		FundingOutpoint: *testOutpoint,
-		ShortChanID:     chanID,
-		IsInitiator:     true,
-		IsPending:       true,
-		IdentityPub:     pubKey,
-		Capacity:        btcutil.Amount(10000),
-		LocalChanCfg:    localCfg,
-		RemoteChanCfg:   remoteCfg,
+		ChanType:          SingleFunder,
+		ChainHash:         key,
+		FundingOutpoint:   *testOutpoint,
+		ShortChanID:       chanID,
+		IsInitiator:       true,
+		IsPending:         true,
+		IdentityPub:       pubKey,
+		Capacity:          btcutil.Amount(10000),
+		LocalChanCfg:      localCfg,
+		RemoteChanCfg:     remoteCfg,
+		TotalMSatSent:     8,
+		TotalMSatReceived: 2,
 		LocalCommitment: ChannelCommitment{
-			CommitHeight:      0,
-			LocalBalance:      lnwire.MilliSatoshi(9000),
-			RemoteBalance:     lnwire.MilliSatoshi(3000),
-			CommitFee:         btcutil.Amount(rand.Int63()),
-			FeePerKw:          btcutil.Amount(5000),
-			TotalMSatSent:     8,
-			TotalMSatReceived: 2,
-			CommitTx:          testTx,
-			CommitSig:         bytes.Repeat([]byte{1}, 71),
+			CommitHeight:  0,
+			LocalBalance:  lnwire.MilliSatoshi(9000),
+			RemoteBalance: lnwire.MilliSatoshi(3000),
+			CommitFee:     btcutil.Amount(rand.Int63()),
+			FeePerKw:      btcutil.Amount(5000),
+			CommitTx:      testTx,
+			CommitSig:     bytes.Repeat([]byte{1}, 71),
 		},
 		RemoteCommitment: ChannelCommitment{
-			CommitHeight:      0,
-			LocalBalance:      lnwire.MilliSatoshi(3000),
-			RemoteBalance:     lnwire.MilliSatoshi(9000),
-			CommitFee:         btcutil.Amount(rand.Int63()),
-			FeePerKw:          btcutil.Amount(5000),
-			TotalMSatSent:     2,
-			TotalMSatReceived: 8,
-			CommitTx:          testTx,
-			CommitSig:         bytes.Repeat([]byte{1}, 71),
+			CommitHeight:  0,
+			LocalBalance:  lnwire.MilliSatoshi(3000),
+			RemoteBalance: lnwire.MilliSatoshi(9000),
+			CommitFee:     btcutil.Amount(rand.Int63()),
+			FeePerKw:      btcutil.Amount(5000),
+			CommitTx:      testTx,
+			CommitSig:     bytes.Repeat([]byte{1}, 71),
 		},
 		NumConfsRequired:        4,
 		RemoteCurrentRevocation: privKey.PubKey(),
@@ -400,20 +398,18 @@ func TestChannelStateTransition(t *testing.T) {
 	newTx := channel.LocalCommitment.CommitTx.Copy()
 	newTx.TxIn[0].Sequence = newSequence
 	commitment := ChannelCommitment{
-		CommitHeight:      1,
-		LocalLogIndex:     2,
-		LocalHtlcIndex:    1,
-		RemoteLogIndex:    2,
-		RemoteHtlcIndex:   1,
-		LocalBalance:      lnwire.MilliSatoshi(1e8),
-		RemoteBalance:     lnwire.MilliSatoshi(1e8),
-		CommitFee:         55,
-		FeePerKw:          99,
-		TotalMSatSent:     323,
-		TotalMSatReceived: 999,
-		CommitTx:          newTx,
-		CommitSig:         newSig,
-		Htlcs:             htlcs,
+		CommitHeight:    1,
+		LocalLogIndex:   2,
+		LocalHtlcIndex:  1,
+		RemoteLogIndex:  2,
+		RemoteHtlcIndex: 1,
+		LocalBalance:    lnwire.MilliSatoshi(1e8),
+		RemoteBalance:   lnwire.MilliSatoshi(1e8),
+		CommitFee:       55,
+		FeePerKw:        99,
+		CommitTx:        newTx,
+		CommitSig:       newSig,
+		Htlcs:           htlcs,
 	}
 
 	// First update the local node's broadcastable state and also add a
@@ -455,6 +451,14 @@ func TestChannelStateTransition(t *testing.T) {
 	remoteCommit.CommitHeight = 1
 	commitDiff := &CommitDiff{
 		Commitment: remoteCommit,
+		CommitSig: &lnwire.CommitSig{
+			ChanID:    lnwire.ChannelID(key),
+			CommitSig: testSig,
+			HtlcSigs: []*btcec.Signature{
+				testSig,
+				testSig,
+			},
+		},
 		LogUpdates: []LogUpdate{
 			{
 				LogIndex: 1,
@@ -489,8 +493,8 @@ func TestChannelStateTransition(t *testing.T) {
 		t.Fatalf("unable to fetch commit diff: %v", err)
 	}
 	if !reflect.DeepEqual(commitDiff, diskCommitDiff) {
-		t.Fatalf("commit diffs don't match: %v vs %v", remoteCommit,
-			diskCommitDiff)
+		t.Fatalf("commit diffs don't match: %v vs %v", spew.Sdump(remoteCommit),
+			spew.Sdump(diskCommitDiff))
 	}
 
 	// We'll save the old remote commitment as this will be added to the

@@ -238,16 +238,6 @@ type ChannelCommitment struct {
 	// channel as on-chain conditions change.
 	FeePerKw btcutil.Amount
 
-	// TotalMSatSent is the total number of milli-satoshis we've sent
-	// within this channel.
-	//
-	// TODO(roasbeef): make into open chan level again?
-	TotalMSatSent lnwire.MilliSatoshi
-
-	// TotalMSatReceived is the total number of milli-satoshis we've
-	// received within this channel.
-	TotalMSatReceived lnwire.MilliSatoshi
-
 	// CommitTx is the latest version of the commitment state, broadcast
 	// able by us.
 	CommitTx *wire.MsgTx
@@ -324,6 +314,14 @@ type OpenChannel struct {
 
 	// Capacity is the total capacity of this channel.
 	Capacity btcutil.Amount
+
+	// TotalMSatSent is the total number of milli-satoshis we've sent
+	// within this channel.
+	TotalMSatSent lnwire.MilliSatoshi
+
+	// TotalMSatReceived is the total number of milli-satoshis we've
+	// received within this channel.
+	TotalMSatReceived lnwire.MilliSatoshi
 
 	// LocalChanCfg is the channel configuration for the local node.
 	LocalChanCfg ChannelConfig
@@ -800,10 +798,6 @@ func deserializeCommitDiff(r io.Reader) (*CommitDiff, error) {
 		return nil, err
 	}
 
-	if err := readElement(r, &d.CommitSig); err != nil {
-		return nil, err
-	}
-
 	d.CommitSig = &lnwire.CommitSig{}
 	if err := d.CommitSig.Decode(r, 0); err != nil {
 		return nil, err
@@ -1247,10 +1241,19 @@ type ChannelSnapshot struct {
 	// are maintaining the open channel with.
 	RemoteIdentity btcec.PublicKey
 
+	// ChanPoint...
+	ChannelPoint wire.OutPoint
+
 	// Capacity...
 	Capacity btcutil.Amount
 
-	ChannelPoint wire.OutPoint
+	// TotalMSatSent is the total number of milli-satoshis we've sent
+	// within this channel.
+	TotalMSatSent lnwire.MilliSatoshi
+
+	// TotalMSatReceived is the total number of milli-satoshis we've
+	// received within this channel.
+	TotalMSatReceived lnwire.MilliSatoshi
 
 	// ChannelCommitment...
 	ChannelCommitment
@@ -1265,16 +1268,16 @@ func (c *OpenChannel) Snapshot() *ChannelSnapshot {
 
 	localCommit := c.LocalCommitment
 	snapshot := &ChannelSnapshot{
-		RemoteIdentity: *c.IdentityPub,
-		ChannelPoint:   c.FundingOutpoint,
-		Capacity:       c.Capacity,
+		RemoteIdentity:    *c.IdentityPub,
+		ChannelPoint:      c.FundingOutpoint,
+		Capacity:          c.Capacity,
+		TotalMSatSent:     c.TotalMSatSent,
+		TotalMSatReceived: c.TotalMSatReceived,
 		ChannelCommitment: ChannelCommitment{
-			LocalBalance:      localCommit.LocalBalance,
-			RemoteBalance:     localCommit.RemoteBalance,
-			CommitHeight:      localCommit.CommitHeight,
-			CommitFee:         localCommit.CommitFee,
-			TotalMSatSent:     localCommit.TotalMSatSent,
-			TotalMSatReceived: localCommit.TotalMSatReceived,
+			LocalBalance:  localCommit.LocalBalance,
+			RemoteBalance: localCommit.RemoteBalance,
+			CommitHeight:  localCommit.CommitHeight,
+			CommitFee:     localCommit.CommitFee,
 		},
 	}
 
@@ -1350,7 +1353,8 @@ func putChanInfo(chanBucket *bolt.Bucket, channel *OpenChannel) error {
 		channel.ChanType, channel.ChainHash, channel.FundingOutpoint,
 		channel.ShortChanID, channel.IsPending, channel.IsInitiator,
 		channel.FundingBroadcastHeight, channel.NumConfsRequired,
-		channel.IdentityPub, channel.Capacity,
+		channel.IdentityPub, channel.Capacity, channel.TotalMSatSent,
+		channel.TotalMSatReceived,
 	); err != nil {
 		return err
 	}
@@ -1376,8 +1380,8 @@ func serializeChanCommit(w io.Writer, c *ChannelCommitment) error {
 	if err := writeElements(w,
 		c.CommitHeight, c.LocalLogIndex, c.LocalHtlcIndex,
 		c.RemoteLogIndex, c.RemoteHtlcIndex, c.LocalBalance,
-		c.RemoteBalance, c.CommitFee, c.FeePerKw, c.TotalMSatSent,
-		c.TotalMSatReceived, c.CommitTx, c.CommitSig,
+		c.RemoteBalance, c.CommitFee, c.FeePerKw, c.CommitTx,
+		c.CommitSig,
 	); err != nil {
 		return err
 	}
@@ -1449,7 +1453,8 @@ func fetchChanInfo(chanBucket *bolt.Bucket, channel *OpenChannel) error {
 		&channel.ChanType, &channel.ChainHash, &channel.FundingOutpoint,
 		&channel.ShortChanID, &channel.IsPending, &channel.IsInitiator,
 		&channel.FundingBroadcastHeight, &channel.NumConfsRequired,
-		&channel.IdentityPub, &channel.Capacity,
+		&channel.IdentityPub, &channel.Capacity, &channel.TotalMSatSent,
+		&channel.TotalMSatReceived,
 	); err != nil {
 		return err
 	}
@@ -1478,8 +1483,7 @@ func deserializeChanCommit(r io.Reader) (ChannelCommitment, error) {
 	err := readElements(r,
 		&c.CommitHeight, &c.LocalLogIndex, &c.LocalHtlcIndex, &c.RemoteLogIndex,
 		&c.RemoteHtlcIndex, &c.LocalBalance, &c.RemoteBalance,
-		&c.CommitFee, &c.FeePerKw, &c.TotalMSatSent, &c.TotalMSatReceived,
-		&c.CommitTx, &c.CommitSig,
+		&c.CommitFee, &c.FeePerKw, &c.CommitTx, &c.CommitSig,
 	)
 	if err != nil {
 		return c, err

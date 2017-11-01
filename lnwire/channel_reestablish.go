@@ -2,12 +2,15 @@ package lnwire
 
 import "io"
 
-// ChannelReestablish is sent during node reconnection for every channel
-// established in order to synchronize the states on both sides.
-//
-// TODO(roasbeef): flesh out commitment more
+// ChannelReestablish is a message sent between peers that have an existing
+// open channel upon connection reestablishment. This message allows both sides
+// to report their local state, and their current knowledge of the state of the
+// remote commitment chain. If a deviation is detected and can be recovered
+// from, then the necessary messages will be retransmitted. If the level of
+// desynchronization if irreconcilable, then the channel will be force closed.
 type ChannelReestablish struct {
-	// ChanID serves to identify to which channel this message belongs.
+	// ChanID is the channel ID of the channel state we're attempting
+	// synchronize with the remote party.
 	ChanID ChannelID
 
 	// NextLocalCommitHeight is the next local commitment height of the

@@ -861,6 +861,7 @@ func (l *LightningWallet) handleContributionMsg(req *addContributionMsg) {
 	// Record newly available information within the open channel state.
 	chanState.FundingOutpoint = *fundingOutpoint
 	chanState.LocalCommitment.CommitTx = ourCommitTx
+	chanState.RemoteCommitment.CommitTx = theirCommitTx
 
 	// Generate a signature for their version of the initial commitment
 	// transaction.
@@ -1152,6 +1153,7 @@ func (l *LightningWallet) handleSingleFunderSigs(req *addSingleFunderSigsMsg) {
 	txsort.InPlaceSort(ourCommitTx)
 	txsort.InPlaceSort(theirCommitTx)
 	chanState.LocalCommitment.CommitTx = ourCommitTx
+	chanState.RemoteCommitment.CommitTx = theirCommitTx
 
 	channelValue := int64(pendingReservation.partialState.Capacity)
 	hashCache := txscript.NewTxSigHashes(ourCommitTx)
