@@ -846,7 +846,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 
 		// Otherwise, the remote party initiated the state transition,
 		// so we'll reply with a signature to provide them with their
-		// version of the latest commitment l.
+		// version of the latest commitment.
 		if err := l.updateCommitTx(); err != nil {
 			l.fail("unable to update commitment: %v", err)
 			return
@@ -881,7 +881,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		}()
 
 	case *lnwire.UpdateFee:
-		// We received fee update from peer. If we are the initator we
+		// We received fee update from peer. If we are the initiator we
 		// will fail the channel, if not we will apply the update.
 		fee := msg.FeePerKw
 		if err := l.channel.ReceiveUpdateFee(fee); err != nil {

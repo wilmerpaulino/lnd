@@ -1535,6 +1535,13 @@ func (lc *LightningChannel) restoreCommitState(
 			return err
 		}
 		lc.remoteCommitChain.addCommitment(remoteCommit)
+
+		// We'll also re-create the set of commitment keys needed to
+		// fully re-derive the state.
+		pendingRemoteKeyChain = deriveCommitmentKeys(
+			pendingCommitPoint, false, lc.localChanCfg,
+			lc.remoteChanCfg,
+		)
 	}
 
 	// TODO(roasbeef): MOAR LOGGING
@@ -1605,7 +1612,7 @@ func (lc *LightningChannel) restoreStateLogs(
 	pendingHeight := pendingCommit.CommitHeight
 
 	// If we did have a dangling commit, then we'll examine which updates
-	// we included in that state and re-insert them into the update log.
+	// we included in that state and re-insert them into our update log.
 	for _, logUpdate := range pendingRemoteCommit.LogUpdates {
 		payDesc, err := lc.logUpdateToPayDesc(
 			&logUpdate, lc.remoteUpdateLog, pendingHeight,
@@ -1617,9 +1624,9 @@ func (lc *LightningChannel) restoreStateLogs(
 		}
 
 		if payDesc.EntryType == Add {
-			lc.remoteUpdateLog.appendHtlc(payDesc)
+			lc.localUpdateLog.appendHtlc(payDesc)
 		} else {
-			lc.remoteUpdateLog.appendUpdate(payDesc)
+			lc.localUpdateLog.appendUpdate(payDesc)
 		}
 	}
 
@@ -2742,8 +2749,6 @@ func (lc *LightningChannel) createCommitDiff(
 	// out.
 	chanID := lnwire.NewChanIDFromOutPoint(&lc.channelState.FundingOutpoint)
 
-	fmt.Println("making commit diff for height: ", newCommit.height)
-
 	// We'll now run through our local update log to locate the items which
 	// were only just committed within this pending state. This will be the
 	// set of items we need to retransmit if we reconnect and find that
@@ -2758,9 +2763,6 @@ func (lc *LightningChannel) createCommitDiff(
 		if pd.addCommitHeightRemote != newCommit.height &&
 			pd.removeCommitHeightRemote != newCommit.height {
 
-			fmt.Printf("skipping, height=%v, add=%v, remove=%v\n",
-				newCommit.height, pd.addCommitHeightRemote,
-				pd.removeCommitHeightRemote)
 			continue
 		}
 
@@ -3000,8 +3002,8 @@ func (lc *LightningChannel) SignNextCommitment() (*btcec.Signature, []*btcec.Sig
 //    not received
 func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) ([]lnwire.Message, error) {
 
-	lc.Lock()
-	defer lc.Unlock()
+	// TODO(roasbeef): don't need lock as done before actually stating full
+	// state machine?
 
 	// We owe them a commitment if they have an un-acked commitment and the
 	// tip of their chain (from our Pov) is equal to what they think their
@@ -3015,16 +3017,55 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 	localChainTail := lc.localCommitChain.tail()
 	oweRevocation := localChainTail.height == msg.RemoteCommitTailHeight+1
 
-	// No we'll examine the state we have, vs what was contained in the
+	// Now we'll examine the state we have, vs what was contained in the
 	// chain sync message. If we're de-synchronized, then we'll send a
 	// batch of messages which when applied will kick start the chain
 	// resync.
 	var updates []lnwire.Message
-	switch {
+
+	// If we owe the remote party a revocation message, then we'll re-send
+	// the last revocation message that we sent. This will be the
+	// revocation message for our prior chain tail.
+	if oweRevocation {
+		revocationMsg, err := lc.generateRevocation(
+			localChainTail.height - 1,
+		)
+		if err != nil {
+			return nil, err
+		}
+		updates = append(updates, revocationMsg)
+
+		// Next, as a precaution, we'll check a special edge case. If
+		// they initiated a state transition, we sent the revocation,
+		// but died before the signature was sent. We re-transmit our
+		// revocation, but also initiate a state transition to re-sync
+		// them.
+		if lc.localCommitChain.tip().height >
+			lc.remoteCommitChain.tip().height {
+
+			commitSig, htlcSigs, err := lc.SignNextCommitment()
+			if err != nil {
+				return nil, err
+			}
+			updates = append(updates, &lnwire.CommitSig{
+				ChanID: lnwire.NewChanIDFromOutPoint(
+					&lc.channelState.FundingOutpoint,
+				),
+				CommitSig: commitSig,
+				HtlcSigs:  htlcSigs,
+			})
+		}
+
+		// If we don't owe them a revocation, and the height of our commitment
+		// chain reported by the remote party is not equal to our chain tail,
+		// then we cannot sync.
+	} else if !oweRevocation && localChainTail.height != msg.RemoteCommitTailHeight {
+		return nil, ErrCannotSyncCommitChains
+	}
 
 	// If we owe them a commitment, then we'll read from disk our
 	// commitment diff, so we can re-send them to the remote party.
-	case oweCommitment:
+	if oweCommitment {
 		// Grab the current remote chain tip from the database. This
 		// commit diff contains all the information required to re-sync
 		// our states.
@@ -3044,28 +3085,10 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 		// commitment chain with our local version of their chain.
 		updates = append(updates, commitDiff.CommitSig)
 
-	// If we don't owe them a commitment, yet the tip of their chain isn't
-	// one more than the next local commit height they report, we'll fail
-	// the channel.
-	case !oweCommitment && remoteChainTip.height+1 != msg.NextLocalCommitHeight:
-		return nil, ErrCannotSyncCommitChains
-
-	// If we owe the remote party a revocation message, then we'll re-send
-	// the last revocation message that we sent. This will be the
-	// revocation message for our prior chain tail.
-	case oweRevocation:
-		revocationMsg, err := lc.generateRevocation(
-			localChainTail.height - 1,
-		)
-		if err != nil {
-			return nil, err
-		}
-		updates = append(updates, revocationMsg)
-
-	// If we don't owe them a revocation, and the height of our commitment
-	// chain reported by the remote party is not equal to our chain tail,
-	// then we cannot sync.
-	case !oweRevocation && localChainTail.height != msg.RemoteCommitTailHeight:
+		// If we don't owe them a commitment, yet the tip of their chain isn't
+		// one more than the next local commit height they report, we'll fail
+		// the channel.
+	} else if !oweCommitment && remoteChainTip.height+1 != msg.NextLocalCommitHeight {
 		return nil, ErrCannotSyncCommitChains
 	}
 
@@ -3097,6 +3120,9 @@ func (lc *LightningChannel) ChanSyncMsg() *lnwire.ChannelReestablish {
 	remoteChainTipHeight := lc.remoteCommitChain.tail().height
 
 	return &lnwire.ChannelReestablish{
+		ChanID: lnwire.NewChanIDFromOutPoint(
+			&lc.channelState.FundingOutpoint,
+		),
 		NextLocalCommitHeight:  nextLocalCommitHeight,
 		RemoteCommitTailHeight: remoteChainTipHeight,
 	}
