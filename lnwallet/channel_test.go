@@ -3236,12 +3236,11 @@ func TestChanSyncOweRevocationAndCommitForceTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to process chan sync msg: %v", err)
 	}
-	fmt.Println(spew.Sdump(bobMsgsToSend))
 	if len(bobMsgsToSend) != 2 {
 		t.Fatalf("expected bob to send %v messages, instead "+
 			"sends: %v", 2, spew.Sdump(bobMsgsToSend))
 	}
-	/*bobReRevoke, ok := bobMsgsToSend[0].(*lnwire.RevokeAndAck)
+	bobReRevoke, ok := bobMsgsToSend[0].(*lnwire.RevokeAndAck)
 	if !ok {
 		t.Fatalf("expected bob to re-send revoke, instead sending: %v",
 			spew.Sdump(bobMsgsToSend[0]))
@@ -3251,11 +3250,32 @@ func TestChanSyncOweRevocationAndCommitForceTransition(t *testing.T) {
 			bobRevocation, bobReRevoke)
 	}
 
-	// The second message should be his CommitSig message that he never sent
+	// The second message should be his CommitSig message that he never
+	// sent, but will send in order to force both states to synchronize.
 	bobReCommitSigMsg, ok := bobMsgsToSend[1].(*lnwire.CommitSig)
 	if !ok {
 		t.Fatalf("expected bob to re-send commit sig, instead sending: %v",
 			spew.Sdump(bobMsgsToSend[1]))
+	}
+
+	// At this point we simulate the connection failing with a restart from
+	// Bob. He should still re-send the exact same set of messages.
+	bobChannel, err = restartChannel(bobChannel)
+	if err != nil {
+		t.Fatalf("unable to restart channel: %v", err)
+	}
+	if len(bobMsgsToSend) != 2 {
+		t.Fatalf("expected bob to send %v messages, instead "+
+			"sends: %v", 2, spew.Sdump(bobMsgsToSend))
+	}
+	bobReRevoke, ok := bobMsgsToSend[0].(*lnwire.RevokeAndAck)
+	if !ok {
+		t.Fatalf("expected bob to re-send revoke, instead sending: %v",
+			spew.Sdump(bobMsgsToSend[0]))
+	}
+	if !reflect.DeepEqual(bobReRevoke, bobRevocation) {
+		t.Fatalf("revocation msgs don't match: expected %v, got %v",
+			bobRevocation, bobReRevoke)
 	}
 	if !bobReCommitSigMsg.CommitSig.IsEqual(bobSig) {
 		t.Fatalf("commit sig msgs don't match: expected %x got %x",
@@ -3274,20 +3294,7 @@ func TestChanSyncOweRevocationAndCommitForceTransition(t *testing.T) {
 		}
 	}
 
-	// We expect Bob to send exactly two messages: first his revocation
-	// message to Alice, and second his original commit sig message.
-	assertBobSendsRevokeAndCommit()
-
-	// At this point we simulate the connection failing with a restart from
-	// Bob. He should still re-send the exact same set of messages.
-	bobChannel, err = restartChannel(bobChannel)
-	if err != nil {
-		t.Fatalf("unable to restart channel: %v", err)
-	}
-	assertBobSendsRevokeAndCommit()*/
-
 	// continue operation
-
 }
 
 // TestChanSyncUnableToSync tests that if Alice or Bob receive an invalid
@@ -3315,7 +3322,6 @@ func TestChanSyncUnableToSync(t *testing.T) {
 		NextLocalCommitHeight:  1000,
 		RemoteCommitTailHeight: 9000,
 	}
-
 	_, err = bobChannel.ProcessChanSyncMsg(badChanSync)
 	if err != ErrCannotSyncCommitChains {
 		t.Fatalf("expected error instead have: %v", err)
@@ -3326,9 +3332,4 @@ func TestChanSyncUnableToSync(t *testing.T) {
 	}
 }
 
-// TODO(roasbeef): testing.Quick test case!!!
-
-// TODO(roasbeef): tests
-//  * properly reconstruct state on disk
-//  * pending commitment properly stored on disk
-//  * simulate restart: fully synced, send commit, send revocation, unable to sync
+// TODO(roasbeef): testing.Quick test case for retrans!!!
