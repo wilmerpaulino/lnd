@@ -763,18 +763,16 @@ func TestUpdateForwardingPolicy(t *testing.T) {
 
 	// First, send this 1 BTC payment over the three hops, the payment
 	// should succeed, and all balances should be updated accordingly.
-	invoice, err := n.makePayment(n.aliceServer, n.carolServer,
+	payResp, err := n.makePayment(n.aliceServer, n.carolServer,
 		n.bobServer.PubKey(), hops, amountNoFee, htlcAmt,
 		htlcExpiry).Wait(10 * time.Second)
 	if err != nil {
 		t.Fatalf("unable to send payment: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
-
 	// Carol's invoice should now be shown as settled as the payment
 	// succeeded.
-	invoice, err := receiver.registry.LookupInvoice(rhash)
+	invoice, err := n.carolServer.registry.LookupInvoice(payResp)
 	if err != nil {
 		t.Fatalf("unable to get invoice: %v", err)
 	}
@@ -817,7 +815,7 @@ func TestUpdateForwardingPolicy(t *testing.T) {
 	// in Bob's new fee policy.
 	_, err = n.makePayment(n.aliceServer, n.carolServer,
 		n.bobServer.PubKey(), hops, amountNoFee, htlcAmt,
-		htlcExpiry)
+		htlcExpiry).Wait(10 * time.Second)
 	if err == nil {
 		t.Fatalf("payment should've been rejected")
 	}
@@ -1358,8 +1356,7 @@ func TestChannelLinkSingleHopMessageOrdering(t *testing.T) {
 	// * settle request to be sent back from bob to alice.
 	// * alice<->bob commitment state to be updated.
 	// * user notification to be sent.
-	receiver := n.bobServer
-	_, err = n.makePayment(n.aliceServer, receiver,
+	_, err = n.makePayment(n.aliceServer, n.bobServer,
 		n.bobServer.PubKey(), hops, amount, htlcAmt,
 		totalTimelock).Wait(10 * time.Second)
 	if err != nil {
@@ -1375,6 +1372,7 @@ type mockPeer struct {
 func (m *mockPeer) SendMessage(msg lnwire.Message) error {
 	m.Lock()
 	m.sentMsgs = append(m.sentMsgs, msg)
+	fmt.Println("sent msg: ", msg)
 	m.Unlock()
 	return nil
 }
@@ -1406,7 +1404,7 @@ func newSingleLinkTestHarness(chanAmt btcutil.Amount) (ChannelLink, func(), erro
 	}
 
 	chanID := lnwire.NewShortChanIDFromInt(4)
-	aliceChannel, _, fCleanUp, err := createTestChannel(
+	aliceChannel, _, fCleanUp, _, err := createTestChannel(
 		alicePrivKey, bobPrivKey, chanAmt, chanAmt, chanID,
 	)
 	if err != nil {
@@ -1701,120 +1699,129 @@ func TestChannelLinkBandwidthConsistencyOverflow(t *testing.T) {
 	}
 }
 
-var retransmissionTests = []struct {
-	name     string
-	messages []expectedMessage
-}{
-	{
-		// Tests the ability of the channel links states to be synchronized
-		// after remote node haven't receive revoke and ack message.
-		name: "intercept last alice revoke_and_ack",
-		messages: []expectedMessage{
-			// First initialization of the channel.
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// Send payment from Alice to Bob and intercept the last revocation
-			// message, in this case Bob should not proceed the payment farther.
-			{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-			{"alice", "bob", &lnwire.RevokeAndAck{}, true},
-
-			// Reestablish messages exchange on nodes restart.
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// Alice should resend the revoke_and_ack message to Bob because Bob
-			// claimed it in the reestbalish message.
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-
-			// Proceed the payment farther by sending the fulfilment message and
-			// trigger the state update.
-			{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-		},
-	},
-	{
-		// Tests the ability of the channel links states to be synchronized
-		// after remote node haven't receive revoke and ack message.
-		name: "intercept bob revoke_and_ack commit_sig messages",
-		messages: []expectedMessage{
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// Send payment from Alice to Bob and intercept the last revocation
-			// message, in this case Bob should not proceed the payment farther.
-			{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-
-			// Intercept bob commit sig and revoke and ack messages.
-			{"bob", "alice", &lnwire.RevokeAndAck{}, true},
-			{"bob", "alice", &lnwire.CommitSig{}, true},
-
-			// Reestablish messages exchange on nodes restart.
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// Bob should resend previously intercepted messages.
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-
-			// Proceed the payment farther by sending the fulfilment message and
-			// trigger the state update.
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-			{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-		},
-	},
-	{
-		// Tests the ability of the channel links states to be synchronized
-		// after remote node haven't receive update and commit sig messages.
-		name: "intercept update add htlc and commit sig messages",
-		messages: []expectedMessage{
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// Attempt make a payment from Alice to Bob, which is intercepted,
-			// emulating the Bob server abrupt stop.
-			{"alice", "bob", &lnwire.UpdateAddHTLC{}, true},
-			{"alice", "bob", &lnwire.CommitSig{}, true},
-
-			// Restart of the nodes, and after that nodes should exchange the
-			// reestablish messages.
-			{"alice", "bob", &lnwire.ChannelReestablish{}, false},
-			{"bob", "alice", &lnwire.ChannelReestablish{}, false},
-
-			// After Bob has notified Alice that he didn't receive updates Alice
-			// should re-send them.
-			{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-
-			{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
-			{"bob", "alice", &lnwire.CommitSig{}, false},
-			{"alice", "bob", &lnwire.RevokeAndAck{}, false},
-			{"alice", "bob", &lnwire.CommitSig{}, false},
-			{"bob", "alice", &lnwire.RevokeAndAck{}, false},
-		},
-	},
-}
-
 // TestChannelRetransmission tests the ability of the channel links to
 // synchronize theirs states after abrupt disconnect.
 func TestChannelRetransmission(t *testing.T) {
 	t.Parallel()
 
+	retransmissionTests := []struct {
+		name     string
+		messages []expectedMessage
+	}{
+		{
+			// Tests the ability of the channel links states to be
+			// synchronized after remote node haven't receive
+			// revoke and ack message.
+			name: "intercept last alice revoke_and_ack",
+			messages: []expectedMessage{
+				// First initialization of the channel.
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// Send payment from Alice to Bob and intercept
+				// the last revocation message, in this case
+				// Bob should not proceed the payment farther.
+				{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+				{"alice", "bob", &lnwire.RevokeAndAck{}, true},
+
+				// Reestablish messages exchange on nodes restart.
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// Alice should resend the revoke_and_ack
+				// message to Bob because Bob claimed it in the
+				// reestbalish message.
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+
+				// Proceed the payment farther by sending the
+				// fulfilment message and trigger the state
+				// update.
+				{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+			},
+		},
+		{
+			// Tests the ability of the channel links states to be
+			// synchronized after remote node haven't receive
+			// revoke and ack message.
+			name: "intercept bob revoke_and_ack commit_sig messages",
+			messages: []expectedMessage{
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// Send payment from Alice to Bob and intercept
+				// the last revocation message, in this case
+				// Bob should not proceed the payment farther.
+				{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+
+				// Intercept bob commit sig and revoke and ack
+				// messages.
+				{"bob", "alice", &lnwire.RevokeAndAck{}, true},
+				{"bob", "alice", &lnwire.CommitSig{}, true},
+
+				// Reestablish messages exchange on nodes restart.
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// Bob should resend previously intercepted messages.
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+
+				// Proceed the payment farther by sending the
+				// fulfilment message and trigger the state
+				// update.
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+				{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+			},
+		},
+		{
+			// Tests the ability of the channel links states to be
+			// synchronized after remote node haven't receive
+			// update and commit sig messages.
+			name: "intercept update add htlc and commit sig messages",
+			messages: []expectedMessage{
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// Attempt make a payment from Alice to Bob,
+				// which is intercepted, emulating the Bob
+				// server abrupt stop.
+				{"alice", "bob", &lnwire.UpdateAddHTLC{}, true},
+				{"alice", "bob", &lnwire.CommitSig{}, true},
+
+				// Restart of the nodes, and after that nodes
+				// should exchange the reestablish messages.
+				{"alice", "bob", &lnwire.ChannelReestablish{}, false},
+				{"bob", "alice", &lnwire.ChannelReestablish{}, false},
+
+				// After Bob has notified Alice that he didn't
+				// receive updates Alice should re-send them.
+				{"alice", "bob", &lnwire.UpdateAddHTLC{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+
+				{"bob", "alice", &lnwire.UpdateFufillHTLC{}, false},
+				{"bob", "alice", &lnwire.CommitSig{}, false},
+				{"alice", "bob", &lnwire.RevokeAndAck{}, false},
+				{"alice", "bob", &lnwire.CommitSig{}, false},
+				{"bob", "alice", &lnwire.RevokeAndAck{}, false},
+			},
+		},
+	}
 	paymentWithRestart := func(t *testing.T, messages []expectedMessage) {
 		channels, cleanUp, restoreChannelsFromDb, err := createClusterChannels(
 			btcutil.SatoshiPerBitcoin*5,
@@ -1833,8 +1840,11 @@ func TestChannelRetransmission(t *testing.T) {
 			"bob", messages, chanID, true)
 
 		// Add interceptor to check the order of Bob and Alice messages.
-		n := newThreeHopNetwork(t, channels.aliceToBob, channels.bobToAlice,
-			channels.bobToCarol, channels.carolToBob, serverErr, testStartingHeight)
+		n := newThreeHopNetwork(t,
+			channels.aliceToBob, channels.bobToAlice,
+			channels.bobToCarol, channels.carolToBob, serverErr,
+			testStartingHeight,
+		)
 		n.aliceServer.intersect(aliceInterceptor)
 		n.bobServer.intersect(bobInterceptor)
 		if err := n.start(); err != nil {
@@ -1849,8 +1859,8 @@ func TestChannelRetransmission(t *testing.T) {
 		htlcAmt, totalTimelock, hops := generateHops(amount, testStartingHeight,
 			n.firstBobChannelLink)
 
-		// Send payment which should fail because we intercept the update and
-		// commit messages.
+		// Send payment which should fail because we intercept the
+		// update and commit messages.
 		receiver := n.bobServer
 		rhash, err := n.makePayment(n.aliceServer, receiver,
 			n.bobServer.PubKey(), hops, amount, htlcAmt,
@@ -1859,10 +1869,11 @@ func TestChannelRetransmission(t *testing.T) {
 			t.Fatalf("payment shouldn't haven been finished")
 		}
 
-		// Stop network cluster and create new one, with the old channels
-		// states. Also do the *hack* - save the payment receiver to pass it
-		// in new channel link, otherwise payment will be failed because of the
-		// unknown payment hash. Hack will be removed with sphinx payment.
+		// Stop network cluster and create new one, with the old
+		// channels states. Also do the *hack* - save the payment
+		// receiver to pass it in new channel link, otherwise payment
+		// will be failed because of the unknown payment hash. Hack
+		// will be removed with sphinx payment.
 		bobRegistry := n.bobServer.registry
 		n.stop()
 

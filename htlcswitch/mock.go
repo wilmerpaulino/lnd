@@ -12,6 +12,7 @@ import (
 	"bytes"
 
 	"github.com/btcsuite/fastsha256"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -82,24 +83,33 @@ func (s *mockServer) Start() error {
 			case msg := <-s.messages:
 				var shouldSkip bool
 
+				fmt.Println("got msgs: ", s.name, spew.Sdump(msg))
 				for _, interceptor := range s.interceptorFuncs {
+					fmt.Println("trying to intercept")
 					skip, err := interceptor(msg)
 					if err != nil {
+						fmt.Println("NOPE: ", err)
 						s.fail(errors.Errorf("%v: error in the "+
 							"interceptor: %v", s.name, err))
 						return
 					}
 					shouldSkip = shouldSkip || skip
 				}
+				fmt.Println("YUHHH")
 
 				if shouldSkip {
+					fmt.Println("SKIPPING !!!!")
 					continue
 				}
 
+				fmt.Println("processing")
 				if err := s.readHandler(msg); err != nil {
+					fmt.Printf("unable to proc: %v\n", err)
 					s.fail(err)
+					t.Fatalf(err)
 					return
 				}
+				fmt.Println("fin")
 			case <-s.quit:
 				return
 			}
@@ -107,16 +117,6 @@ func (s *mockServer) Start() error {
 	}()
 
 	return nil
-}
-
-func (s *mockServer) fail(err error) {
-	go func() {
-		s.Stop()
-	}()
-
-	go func() {
-		s.errChan <- errors.Errorf("%v server error: %v", s.name, err)
-	}()
 }
 
 // mockHopIterator represents the test version of hop iterator which instead
@@ -280,11 +280,13 @@ func (s *mockServer) intersect(f messageInterceptor) {
 }
 
 func (s *mockServer) SendMessage(message lnwire.Message) error {
+	fmt.Println("sending", s.name, spew.Sdump(message))
 	select {
 	case s.messages <- message:
 	case <-s.quit:
 		return errors.New("server is stopped")
 	}
+	fmt.Println("SENT!!!")
 
 	return nil
 }
@@ -314,10 +316,13 @@ func (s *mockServer) readHandler(message lnwire.Message) error {
 		return errors.New("unknown message type")
 	}
 
+	fmt.Println("got msg: ", s.name, spew.Sdump(message))
+
 	// Dispatch the commitment update message to the proper
 	// channel link dedicated to this channel.
 	link, err := s.htlcSwitch.GetLink(targetChan)
 	if err != nil {
+		fmt.Println("can't get link: ", s.name)
 		return err
 	}
 
@@ -325,8 +330,10 @@ func (s *mockServer) readHandler(message lnwire.Message) error {
 	// the server when handler stacked (server unavailable)
 	done := make(chan struct{})
 	go func() {
+		fmt.Println("handling update: ", s.name)
 		link.HandleChannelUpdate(message)
 		done <- struct{}{}
+		fmt.Println("update fin: ", s.name)
 	}()
 	select {
 	case <-done:
