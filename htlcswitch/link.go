@@ -2,6 +2,7 @@ package htlcswitch
 
 import (
 	"bytes"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -297,30 +298,87 @@ func (l *channelLink) htlcManager() {
 	log.Infof("HTLC manager for ChannelPoint(%v) started, "+
 		"bandwidth=%v", l.channel.ChannelPoint(), l.Bandwidth())
 
-	// If the link have been recreated, than we need to sync the states by
-	// sending the channel reestablishment message.
-	//
-	// TODO(roasbeef): remove bool
+	// TODO(roasbeef): need to call wipe chan whenever D/C?
+
+	// If this isn't the first time that this channel link has been
+	// created, then we'll need to check to see if we need to
+	// re-synchronize state with the remote peer.
 	if l.cfg.SyncStates {
-		log.Infof("Syncing states for channel(%v) via sending the "+
-			"re-establishment message", l.channel.ChannelPoint())
+		log.Infof("Attempting to re-resynchronize ChannelPoint(%v)",
+			l.channel.ChannelPoint())
 
-		// TODO(roasbeef): modify to just return re-init message in full
-		localCommitmentNumber, remoteRevocationNumber := l.channel.LastCounters()
+		fmt.Println("sending sync msg")
 
-		// TODO(roasbeef): check errors
-		l.cfg.Peer.SendMessage(&lnwire.ChannelReestablish{
-			ChanID: l.ChanID(),
-			NextLocalCommitmentNumber:  localCommitmentNumber + 1,
-			NextRemoteRevocationNumber: remoteRevocationNumber + 1,
-		})
+		// First, we'll generate our ChanSync message to send to the
+		// other side. Based on this message, the remote party will
+		// decide if they need to retransmit any data or not.
+		localChanSyncMsg := l.channel.ChanSyncMsg()
+		if err := l.cfg.Peer.SendMessage(localChanSyncMsg); err != nil {
+			l.fail("Unable to send chan sync message for "+
+				"ChannelPoint(%v)", l.channel.ChannelPoint())
+			return
+		}
 
-		// TODO(roasbeef): use goroutine here instead?
-		if err := l.channelInitialization(); err != nil {
-			err := errors.Errorf("unable to sync the states for channel(%v)"+
-				"with remote node: %v", l.ChanID(), err)
-			log.Error(err)
-			l.cfg.Peer.Disconnect(err)
+		fmt.Println("sync msg sent")
+
+		// Next, we'll wait to receive the ChanSync message with a
+		// timeout period. The first message sent MUST be the ChanSync
+		// message, otherwise, we'll terminate the connection.
+		//chanSyncDeadline := time.After(time.Second * 30)
+		chanSyncDeadline := time.After(time.Second * 5)
+		fmt.Println("waiting for resp")
+		select {
+		case msg := <-l.upstream:
+			fmt.Println("got sync msg")
+			remoteChanSyncMsg, ok := msg.(*lnwire.ChannelReestablish)
+			if !ok {
+				l.fail("first message sent to sync should be "+
+					"ChannelReestablish, instead "+
+					"received: %T", msg)
+				fmt.Printf("first message sent to sync should be "+
+					"ChannelReestablish, instead "+
+					"received: %T\n", msg)
+				return
+			}
+
+			// If the remote party indicates that they think we
+			// haven't done any state updates yet, then we'll
+			// retransmit the funding locked message first. We do
+			// this, as at this point we can't be sure if they've
+			// really received the FundingLocked message.
+			if remoteChanSyncMsg.NextLocalCommitHeight == 1 &&
+				localChanSyncMsg.NextLocalCommitHeight == 1 {
+				log.Debugf("Resending fundingLocked message " +
+					"to peer")
+
+				fmt.Println("Resending fundingLocked message " +
+					"to peer")
+
+				nextRevocation, err := l.channel.NextRevocationKey()
+				if err != nil {
+					l.fail("unable to create next "+
+						"revocation: %v", err)
+				}
+
+				fundingLockedMsg := lnwire.NewFundingLocked(
+					l.ChanID(), nextRevocation,
+				)
+				err = l.cfg.Peer.SendMessage(fundingLockedMsg)
+				if err != nil {
+					l.fail("unable to re-send "+
+						"FundingLocked: %v", err)
+				}
+			}
+
+			fmt.Println("prscs")
+
+			// In any case, we'll then process their ChanSync
+			// message.
+			l.handleUpstreamMsg(msg)
+		case <-chanSyncDeadline:
+			fmt.Println("no sync msg")
+			l.fail("didn't receive ChannelReestablish before " +
+				"deadline")
 			return
 		}
 	}
@@ -334,28 +392,6 @@ func (l *channelLink) htlcManager() {
 	defer batchTimer.Stop()
 
 	// TODO(roasbeef): fail chan in case of protocol violation
-
-	// If the number of updates on this channel has been zero, we should
-	// resend the fundingLocked message. This is because in this case we
-	// cannot be sure if the peer really received the last fundingLocked we
-	// sent, so resend now.
-	if l.channel.StateSnapshot().NumUpdates == 0 {
-		log.Debugf("Resending fundingLocked message to peer.")
-
-		nextRevocation, err := l.channel.NextRevocationKey()
-		if err != nil {
-			log.Errorf("unable to create next revocation: %v", err)
-		}
-
-		fundingLockedMsg := lnwire.NewFundingLocked(l.ChanID(),
-			nextRevocation)
-		err = l.cfg.Peer.SendMessage(fundingLockedMsg)
-		if err != nil {
-			log.Errorf("failed resending fundingLocked to peer: %v",
-				err)
-		}
-	}
-
 out:
 	for {
 		select {
@@ -701,21 +737,24 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		log.Infof("Received re-establishment message from remote side "+
 			"for channel(%v)", l.channel.ChannelPoint())
 
-		messagesToSyncState, err := l.channel.ReceiveReestablish(msg)
+		// We've just received a ChnSync message from the remote party,
+		// so we'll process the message  in order to determine if we
+		// need to re-transmit any messages to the remote party.
+		msgsToReSend, err := l.channel.ProcessChanSyncMsg(msg)
 		if err != nil {
-			err := errors.Errorf("unable to handle upstream reestablish "+
+			l.fail("unable to handle upstream reestablish "+
 				"message: %v", err)
-			log.Error(err)
-			l.cfg.Peer.Disconnect(err)
 			return
 		}
 
-		// Send message to the remote side which are needed to synchronize
-		// the state.
 		log.Infof("Sending %v updates to synchronize the "+
-			"state for channel(%v)", len(messagesToSyncState),
+			"state for ChannelPoint(%v)", len(msgsToReSend),
 			l.channel.ChannelPoint())
-		for _, msg := range messagesToSyncState {
+
+		// If we have any messages to retransmit, we'll do so
+		// immediately so we return to a synchronized state as soon as
+		// possible.
+		for _, msg := range msgsToReSend {
 			l.cfg.Peer.SendMessage(msg)
 		}
 
@@ -728,10 +767,13 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		index, err := l.channel.ReceiveHTLC(msg)
 		if err != nil {
 			l.fail("unable to handle upstream add HTLC: %v", err)
+			fmt.Println("unable to add msg")
 			return
 		}
 		log.Tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
+		fmt.Printf("Receive upstream htlc with payment hash(%x), "+
+			"assigning index: %v\n", msg.PaymentHash[:], index)
 
 	case *lnwire.UpdateFufillHTLC:
 		pre := msg.PaymentPreimage
@@ -781,7 +823,7 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		// If remote side have been unable to parse the onion blob we
 		// have sent to it, than we should transform the malformed HTLC
 		// message to the usual HTLC fail message.
-		amt, err := l.channel.ReceiveFailHTLC(idx, b.Bytes())
+		amt, err := l.channel.ReceiveFailHTLC(msg.ID, b.Bytes())
 		if err != nil {
 			l.fail("unable to handle upstream fail HTLC: %v", err)
 			return
@@ -1009,9 +1051,9 @@ func (l *channelLink) UpdateForwardingPolicy(newPolicy ForwardingPolicy) {
 func (l *channelLink) Stats() (uint64, lnwire.MilliSatoshi, lnwire.MilliSatoshi) {
 	snapshot := l.channel.StateSnapshot()
 
-	return snapshot.NumUpdates,
-		snapshot.TotalMilliSatoshisSent,
-		snapshot.TotalMilliSatoshisReceived
+	return snapshot.ChannelCommitment.CommitHeight,
+		snapshot.TotalMSatSent,
+		snapshot.TotalMSatReceived
 }
 
 // String returns the string representation of channel link.
@@ -1543,40 +1585,4 @@ func (l *channelLink) fail(format string, a ...interface{}) {
 	reason := errors.Errorf(format, a...)
 	log.Error(reason)
 	l.cfg.Peer.Disconnect(reason)
-}
-
-// channelInitialization waits for channel synchronization message to
-// be received from another side and handled.
-func (l *channelLink) channelInitialization() error {
-	// Before we launch any of the helper goroutines off the channel link
-	// struct, we'll first ensure proper adherence to the p2p protocol. The
-	// channel reestablish message MUST be sent before any other message.
-	expired := time.After(time.Second * 5)
-
-	for {
-		select {
-		case msg := <-l.upstream:
-			if msg, ok := msg.(*lnwire.ChannelReestablish); ok {
-				l.handleUpstreamMsg(msg)
-				return nil
-			} else {
-				return errors.New("very first message between nodes " +
-					"for channel link should be reestablish message")
-			}
-
-		// TODO(roasbeef): only needed in order to process cmds while
-		// waiting for chan est?
-		case pkt := <-l.downstream:
-			l.overflowQueue.consume(pkt)
-
-		case cmd := <-l.linkControl:
-			l.handleControlCommand(cmd)
-
-		// In order to avoid blocking indefinitely, we'll give the other peer
-		// an upper timeout of 5 seconds to respond before we bail out early.
-		case <-expired:
-			return errors.Errorf("peer did not complete handshake for channel " +
-				"link within 5 seconds")
-		}
-	}
 }

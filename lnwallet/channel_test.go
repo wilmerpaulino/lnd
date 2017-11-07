@@ -3208,12 +3208,12 @@ func TestChanSyncOweRevocationAndCommitForceTransition(t *testing.T) {
 	// Bob then sends his revocation message, but before Alice can process
 	// it (and before he scan send his CommitSig message), then connection
 	// dies.
-	_, err = bobChannel.RevokeCurrentCommitment()
+	bobRevocation, err := bobChannel.RevokeCurrentCommitment()
 	if err != nil {
 		t.Fatalf("unable to revoke bob commitment: %v", err)
 	}
 
-	// Now if we attempt to synchronize states at this point, Alice shoudl
+	// Now if we attempt to synchronize states at this point, Alice should
 	// detect that she owes nothing, while Bob should re-send both his
 	// RevokeAndAck as well as his commitment message.
 	aliceSyncMsg := aliceChannel.ChanSyncMsg()
@@ -3268,33 +3268,58 @@ func TestChanSyncOweRevocationAndCommitForceTransition(t *testing.T) {
 		t.Fatalf("expected bob to send %v messages, instead "+
 			"sends: %v", 2, spew.Sdump(bobMsgsToSend))
 	}
-	bobReRevoke, ok := bobMsgsToSend[0].(*lnwire.RevokeAndAck)
+	bobReRevoke, ok = bobMsgsToSend[0].(*lnwire.RevokeAndAck)
 	if !ok {
 		t.Fatalf("expected bob to re-send revoke, instead sending: %v",
 			spew.Sdump(bobMsgsToSend[0]))
+	}
+	bobSigMsg, ok := bobMsgsToSend[1].(*lnwire.CommitSig)
+	if !ok {
+		t.Fatalf("expected bob to re-send commit sig, instead sending: %v",
+			spew.Sdump(bobMsgsToSend[1]))
 	}
 	if !reflect.DeepEqual(bobReRevoke, bobRevocation) {
 		t.Fatalf("revocation msgs don't match: expected %v, got %v",
 			bobRevocation, bobReRevoke)
 	}
-	if !bobReCommitSigMsg.CommitSig.IsEqual(bobSig) {
+	if !bobReCommitSigMsg.CommitSig.IsEqual(bobSigMsg.CommitSig) {
 		t.Fatalf("commit sig msgs don't match: expected %x got %x",
-			bobSig.Serialize(), bobReCommitSigMsg.CommitSig.Serialize())
+			bobSigMsg.CommitSig.Serialize(),
+			bobReCommitSigMsg.CommitSig.Serialize())
 	}
-	if len(bobReCommitSigMsg.HtlcSigs) != len(bobHtlcSigs) {
+	if len(bobReCommitSigMsg.HtlcSigs) != len(bobSigMsg.HtlcSigs) {
 		t.Fatalf("wrong number of htlc sigs: expected %v, got %v",
-			len(bobHtlcSigs), len(bobReCommitSigMsg.HtlcSigs))
+			len(bobSigMsg.HtlcSigs), len(bobReCommitSigMsg.HtlcSigs))
 	}
 	for i, htlcSig := range bobReCommitSigMsg.HtlcSigs {
-		if !htlcSig.IsEqual(aliceHtlcSigs[i]) {
+		if htlcSig.IsEqual(bobSigMsg.HtlcSigs[i]) {
 			t.Fatalf("htlc sig msgs don't match: "+
 				"expected %x got %x",
-				bobHtlcSigs[i].Serialize(),
+				bobSigMsg.HtlcSigs[i].Serialize(),
 				htlcSig.Serialize())
 		}
 	}
 
-	// continue operation
+	// Now, we'll continue the exchange, sending Bob's revocation and
+	// signature message to Alice, ending with Alice sending her revocation
+	// message to Bob.
+	_, err = aliceChannel.ReceiveRevocation(bobRevocation)
+	if err != nil {
+		t.Fatalf("alice unable to recv revocation: %v", err)
+	}
+	err = aliceChannel.ReceiveNewCommitment(
+		bobSigMsg.CommitSig, bobSigMsg.HtlcSigs,
+	)
+	if err != nil {
+		t.Fatalf("alice unable to rev bob's commitment: %v", err)
+	}
+	aliceRevocation, err := aliceChannel.RevokeCurrentCommitment()
+	if err != nil {
+		t.Fatalf("alice unable to revoke commitment: %v", err)
+	}
+	if _, err := bobChannel.ReceiveRevocation(aliceRevocation); err != nil {
+		t.Fatalf("bob unable to recv revocation: %v", err)
+	}
 }
 
 // TestChanSyncUnableToSync tests that if Alice or Bob receive an invalid
