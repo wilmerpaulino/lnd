@@ -591,6 +591,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			"circuit for %x: %v<->%v", packet.payHash[:],
 			circuit.Src, circuit.Dest)
 
+		// TODO(roasbeef): make this and ones above async?
 		source.HandleSwitchPacket(packet)
 		return nil
 
