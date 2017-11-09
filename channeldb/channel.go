@@ -1281,6 +1281,8 @@ func (c *OpenChannel) Snapshot() *ChannelSnapshot {
 		},
 	}
 
+	// TODO(roasbeef): not getting proper balance here?
+
 	// Copy over the current set of HTLCs to ensure the caller can't mutate
 	// our internal state.
 	snapshot.Htlcs = make([]HTLC, len(localCommit.Htlcs))

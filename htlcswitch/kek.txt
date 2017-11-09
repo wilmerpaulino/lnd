@@ -1,0 +1,135 @@
+=== RUN   TestChannelRetransmission
+=== RUN   TestChannelRetransmission/intercept_last_alice_revoke_and_ack
+restore log
+restore log
+restore log
+restore log
+SENDING:  ChannelReestablish
+SENDING:  ChannelReestablish
+SENDING:  ChannelReestablish
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4201e2000)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) 95e9b2cb7747c74cd3d6c06ff82b65fa341edd3a8b95a24933fd7b63fbd57369,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4201c0000)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) df46cc26127bc4d9f387c7c3b85e248e38e41d8db3c2b357a99e743930f6aca5,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+SENDING:  ChannelReestablish
+got ChannelReestablish, num 9
+[alice] --> [bob]: ChannelReestablish  
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4201ce030)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) 95e9b2cb7747c74cd3d6c06ff82b65fa341edd3a8b95a24933fd7b63fbd57369,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+got ChannelReestablish, num 8
+[alice] <-- [bob]: ChannelReestablish  
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4201ce000)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) df46cc26127bc4d9f387c7c3b85e248e38e41d8db3c2b357a99e743930f6aca5,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+SENDING:  FundingLocked
+SENDING:  FundingLocked
+SENDING:  FundingLocked
+got FundingLocked, num 7
+[alice] <-- [bob]: FundingLocked  
+SENDING:  FundingLocked
+got FundingLocked, num 8
+[alice] --> [bob]: FundingLocked  
+SENDING:  UpdateAddHTLC
+got UpdateAddHTLC, num 7
+[alice] --> [bob]: UpdateAddHTLC  
+BATCH TICK:  1
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): extending remote chain to height 1, local_log=1, remote_log=0
+SENDING:  CommitSig
+got CommitSig, num 6
+[alice] --> [bob]: CommitSig  
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): extending local chain to height 1, local_log=0, remote_log=1
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): state transition accepted: our_balance=500000000000 mSAT, their_balance=399994624000 mSAT
+SENDING:  RevokeAndAck
+local height %v, remote height %v 1 0
+our local index 0, our remote index 0
+their local index 1, their remote index 0
+are synced  false
+got RevokeAndAck, num 6
+[alice] <-- [bob]: RevokeAndAck  
+RESPOND SIG:  (*htlcswitch.mockServer)(0xc4200957c0)(alice)
+
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): remote party accepted state transition, revoked height 0, now at 1
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): extending remote chain to height 1, local_log=0, remote_log=1
+SENDING:  CommitSig
+got CommitSig, num 5
+[alice] <-- [bob]: CommitSig  
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): extending local chain to height 1, local_log=1, remote_log=0
+ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0): state transition accepted: our_balance=399994624000 mSAT, their_balance=500000000000 mSAT
+SENDING:  RevokeAndAck
+local height %v, remote height %v 1 1
+our local index 1, our remote index 1
+their local index 0, their remote index 0
+are synced  true
+NOT RESP
+got RevokeAndAck, num 5
+skipped: [alice] --> [bob]: RevokeAndAck  
+restart alice
+restore log
+restart bob
+restore log
+restart alice
+restore log
+restart bob
+restore log
+SENDING:  ChannelReestablish
+SENDING:  ChannelReestablish
+SENDING:  ChannelReestablish
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc42001f710)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) df46cc26127bc4d9f387c7c3b85e248e38e41d8db3c2b357a99e743930f6aca5,
+ NextLocalCommitHeight: (uint64) 2,
+ RemoteCommitTailHeight: (uint64) 1
+})
+
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4201216b0)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) df46cc26127bc4d9f387c7c3b85e248e38e41d8db3c2b357a99e743930f6aca5,
+ NextLocalCommitHeight: (uint64) 2,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+SENDING:  ChannelReestablish
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc4202a8000)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) 95e9b2cb7747c74cd3d6c06ff82b65fa341edd3a8b95a24933fd7b63fbd57369,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+got ChannelReestablish, num 4
+[alice] --> [bob]: ChannelReestablish  
+got ChannelReestablish, num 4
+sending chan sync:  (*lnwire.ChannelReestablish)(0xc42001f740)({
+ ChanID: (lnwire.ChannelID) (len=32 cap=32) 95e9b2cb7747c74cd3d6c06ff82b65fa341edd3a8b95a24933fd7b63fbd57369,
+ NextLocalCommitHeight: (uint64) 1,
+ RemoteCommitTailHeight: (uint64) 0
+})
+
+[alice] <-- [bob]: ChannelReestablish  
+server alice disconnected due to unable to handle upstream reestablish message: unable to sync commit chains
+SENDING:  FundingLocked
+SENDING:  FundingLocked
+OWE REVOCATION
+Sending 1 updates to synchronize the state for ChannelPoint(a5acf63039749ea957b3c2b38d1de4388e245eb8c3c787f3d9c47b1226cc46df:0)
+SENDING:  RevokeAndAck
+got RevokeAndAck, num 3
+[alice] --> [bob]: RevokeAndAck  
+--- FAIL: TestChannelRetransmission (4.18s)
+    --- FAIL: TestChannelRetransmission/intercept_last_alice_revoke_and_ack (4.18s)
+    	mock.go:334: server alice was disconnected: unable to handle upstream reestablish message: unable to sync commit chains
+    	link_test.go:1945: alice invoice haven't been settled
+FAIL
+exit status 1
+FAIL	github.com/lightningnetwork/lnd/htlcswitch	4.215s

@@ -3,6 +3,8 @@ package htlcswitch
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/lightningnetwork/lnd/lnwire"
 )
 
 // packetQueue is an goroutine-safe queue of htlc packets which over flow the
@@ -22,6 +24,9 @@ type packetQueue struct {
 	// deadlock situation where the main goroutine is attempting a send
 	// with the lock held.
 	queueLen int32
+
+	// totalHtlcAmt...
+	totalHtlcAmt int64
 
 	queueCond *sync.Cond
 	queueMtx  sync.Mutex
@@ -125,6 +130,7 @@ func (p *packetQueue) packetCoordinator() {
 				p.queue[0] = nil
 				p.queue = p.queue[1:]
 				atomic.AddInt32(&p.queueLen, -1)
+				atomic.AddInt64(&p.totalHtlcAmt, int64(-nextPkt.amount))
 				p.queueCond.L.Unlock()
 			case <-p.quit:
 				return
@@ -147,6 +153,7 @@ func (p *packetQueue) AddPkt(pkt *htlcPacket) {
 	p.queueCond.L.Lock()
 	p.queue = append(p.queue, pkt)
 	atomic.AddInt32(&p.queueLen, 1)
+	atomic.AddInt64(&p.totalHtlcAmt, int64(pkt.amount))
 	p.queueCond.L.Unlock()
 
 	// With the message added, we signal to the msgConsumer that there are
@@ -179,4 +186,10 @@ func (p *packetQueue) SignalFreeSlot() {
 // flow queue.
 func (p *packetQueue) Length() int32 {
 	return atomic.LoadInt32(&p.queueLen)
+}
+
+// TotalHtlcAmount....
+func (p *packetQueue) TotalHtlcAmount() lnwire.MilliSatoshi {
+	// TODO(roasbeef): also factor in fee rate?
+	return lnwire.MilliSatoshi(atomic.LoadInt64(&p.totalHtlcAmt))
 }

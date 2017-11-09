@@ -183,11 +183,11 @@ type channelLink struct {
 	// been processed because of the commitment transaction overflow.
 	overflowQueue *packetQueue
 
-	// availableBandwidth is an integer with units of millisatoshi which
-	// indicates the total available bandwidth of a link, taking into
-	// account any pending (uncommitted) HLTC's, and any HTLC's that are
-	// within the overflow queue.
-	availableBandwidth uint64
+	// mailBox is the main interface between the outside world and the
+	// link. All incoming messages will be sent over this mailBox. Messages
+	// include new updates from our connected peer, and new packets to be
+	// forwarded sent by the switch.
+	mailBox *memoryMailBox
 
 	// upstream is a channel that new messages sent from the remote peer to
 	// the local peer will be sent across.
@@ -220,19 +220,22 @@ type channelLink struct {
 func NewChannelLink(cfg ChannelLinkConfig, channel *lnwallet.LightningChannel,
 	currentHeight uint32) ChannelLink {
 
-	return &channelLink{
+	link := &channelLink{
 		cfg:         cfg,
 		channel:     channel,
-		upstream:    make(chan lnwire.Message),
-		downstream:  make(chan *htlcPacket),
+		mailBox:     newMemoryMailBox(),
 		linkControl: make(chan interface{}),
 		// TODO(roasbeef): just do reserve here?
-		availableBandwidth: uint64(channel.StateSnapshot().LocalBalance),
-		logCommitTimer:     time.NewTimer(300 * time.Millisecond),
-		overflowQueue:      newPacketQueue(lnwallet.MaxHTLCNumber / 2),
-		bestHeight:         currentHeight,
-		quit:               make(chan struct{}),
+		logCommitTimer: time.NewTimer(300 * time.Millisecond),
+		overflowQueue:  newPacketQueue(lnwallet.MaxHTLCNumber / 2),
+		bestHeight:     currentHeight,
+		quit:           make(chan struct{}),
 	}
+
+	link.upstream = link.mailBox.MessageOutBox()
+	link.downstream = link.mailBox.PacketOutBox()
+
+	return link
 }
 
 // A compile time check to ensure channelLink implements the ChannelLink
@@ -252,6 +255,7 @@ func (l *channelLink) Start() error {
 
 	log.Infof("ChannelLink(%v) is starting", l)
 
+	l.mailBox.Start()
 	l.overflowQueue.Start()
 
 	l.wg.Add(1)
@@ -274,6 +278,7 @@ func (l *channelLink) Stop() {
 
 	l.channel.Stop()
 
+	l.mailBox.Stop()
 	l.overflowQueue.Stop()
 
 	close(l.quit)
@@ -307,8 +312,6 @@ func (l *channelLink) htlcManager() {
 		log.Infof("Attempting to re-resynchronize ChannelPoint(%v)",
 			l.channel.ChannelPoint())
 
-		fmt.Println("sending sync msg")
-
 		// First, we'll generate our ChanSync message to send to the
 		// other side. Based on this message, the remote party will
 		// decide if they need to retransmit any data or not.
@@ -319,25 +322,19 @@ func (l *channelLink) htlcManager() {
 			return
 		}
 
-		fmt.Println("sync msg sent")
+		//fmt.Println("sending chan sync: ", spew.Sdump(localChanSyncMsg))
 
 		// Next, we'll wait to receive the ChanSync message with a
 		// timeout period. The first message sent MUST be the ChanSync
 		// message, otherwise, we'll terminate the connection.
-		//chanSyncDeadline := time.After(time.Second * 30)
-		chanSyncDeadline := time.After(time.Second * 5)
-		fmt.Println("waiting for resp")
+		chanSyncDeadline := time.After(time.Second * 30)
 		select {
 		case msg := <-l.upstream:
-			fmt.Println("got sync msg")
 			remoteChanSyncMsg, ok := msg.(*lnwire.ChannelReestablish)
 			if !ok {
 				l.fail("first message sent to sync should be "+
 					"ChannelReestablish, instead "+
 					"received: %T", msg)
-				fmt.Printf("first message sent to sync should be "+
-					"ChannelReestablish, instead "+
-					"received: %T\n", msg)
 				return
 			}
 
@@ -348,16 +345,15 @@ func (l *channelLink) htlcManager() {
 			// really received the FundingLocked message.
 			if remoteChanSyncMsg.NextLocalCommitHeight == 1 &&
 				localChanSyncMsg.NextLocalCommitHeight == 1 {
-				log.Debugf("Resending fundingLocked message " +
-					"to peer")
 
-				fmt.Println("Resending fundingLocked message " +
+				log.Debugf("Resending fundingLocked message " +
 					"to peer")
 
 				nextRevocation, err := l.channel.NextRevocationKey()
 				if err != nil {
 					l.fail("unable to create next "+
 						"revocation: %v", err)
+					return
 				}
 
 				fundingLockedMsg := lnwire.NewFundingLocked(
@@ -367,16 +363,14 @@ func (l *channelLink) htlcManager() {
 				if err != nil {
 					l.fail("unable to re-send "+
 						"FundingLocked: %v", err)
+					return
 				}
 			}
-
-			fmt.Println("prscs")
 
 			// In any case, we'll then process their ChanSync
 			// message.
 			l.handleUpstreamMsg(msg)
 		case <-chanSyncDeadline:
-			fmt.Println("no sync msg")
 			l.fail("didn't receive ChannelReestablish before " +
 				"deadline")
 			return
@@ -452,6 +446,8 @@ out:
 				continue
 			}
 
+			//fmt.Println("LOG TICK")
+
 			if err := l.updateCommitTx(); err != nil {
 				l.fail("unable to update commitment: %v", err)
 				break out
@@ -463,6 +459,8 @@ out:
 			if l.batchCounter == 0 {
 				continue
 			}
+
+			//fmt.Println("BATCH TICK: ", l.batchCounter)
 
 			// Otherwise, attempt to extend the remote commitment
 			// chain including all the currently pending entries.
@@ -501,12 +499,6 @@ out:
 					htlc.PaymentHash[:],
 					l.batchCounter)
 
-				// As we're adding a new pkt to the overflow
-				// queue, decrement the available bandwidth.
-				atomic.AddUint64(
-					&l.availableBandwidth,
-					-uint64(htlc.Amount),
-				)
 				l.overflowQueue.AddPkt(pkt)
 				continue
 			}
@@ -580,16 +572,6 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					htlc.PaymentHash[:],
 					l.batchCounter)
 
-				// If we're processing this HTLC for the first
-				// time, then we'll decrement the available
-				// bandwidth. As otherwise, we'd double count
-				// the effect of the HTLC.
-				if !isReProcess {
-					atomic.AddUint64(
-						&l.availableBandwidth, -uint64(htlc.Amount),
-					)
-				}
-
 				l.overflowQueue.AddPkt(pkt)
 				return
 
@@ -642,22 +624,12 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 					isObfuscated,
 				)
 
-				atomic.AddUint64(&l.availableBandwidth, uint64(htlc.Amount))
-
 				// TODO(roasbeef): need to identify if sent
 				// from switch so don't need to obfuscate
 				go l.cfg.Switch.forward(failPkt)
 				log.Infof("Unable to handle downstream add HTLC: %v", err)
 				return
 			}
-		}
-
-		// If we're processing this HTLC for the first time, then we'll
-		// decrement the available bandwidth.
-		if !isReProcess {
-			// Subtract the available bandwidth as we have a new
-			// HTLC in limbo.
-			atomic.AddUint64(&l.availableBandwidth, -uint64(htlc.Amount))
 		}
 
 		log.Tracef("Received downstream htlc: payment_hash=%x, "+
@@ -672,16 +644,12 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 		// upstream. Therefore we settle the HTLC within the our local
 		// state machine.
 		pre := htlc.PaymentPreimage
-		logIndex, amt, err := l.channel.SettleHTLC(pre)
+		logIndex, _, err := l.channel.SettleHTLC(pre)
 		if err != nil {
 			// TODO(roasbeef): broadcast on-chain
 			l.fail("unable to settle incoming HTLC: %v", err)
 			return
 		}
-
-		// Increment the available bandwidth as we've settled an HTLC
-		// extended by tbe remote party.
-		atomic.AddUint64(&l.availableBandwidth, uint64(amt))
 
 		// With the HTLC settled, we'll need to populate the wire
 		// message to target the specific channel and HTLC to be
@@ -721,6 +689,7 @@ func (l *channelLink) handleDownStreamPkt(pkt *htlcPacket, isReProcess bool) {
 	// If this newly added update exceeds the min batch size for adds, or
 	// this is a settle request, then initiate an update.
 	if l.batchCounter >= 10 || isSettle {
+		//fmt.Println("BATACH INSTA SEND")
 		if err := l.updateCommitTx(); err != nil {
 			l.fail("unable to update commitment: %v", err)
 			return
@@ -747,9 +716,15 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 			return
 		}
 
-		log.Infof("Sending %v updates to synchronize the "+
-			"state for ChannelPoint(%v)", len(msgsToReSend),
-			l.channel.ChannelPoint())
+		if len(msgsToReSend) > 0 {
+			log.Infof("Sending %v updates to synchronize the "+
+				"state for ChannelPoint(%v)", len(msgsToReSend),
+				l.channel.ChannelPoint())
+
+			fmt.Printf("Sending %v updates to synchronize the "+
+				"state for ChannelPoint(%v)\n", len(msgsToReSend),
+				l.channel.ChannelPoint())
+		}
 
 		// If we have any messages to retransmit, we'll do so
 		// immediately so we return to a synchronized state as soon as
@@ -767,13 +742,11 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		index, err := l.channel.ReceiveHTLC(msg)
 		if err != nil {
 			l.fail("unable to handle upstream add HTLC: %v", err)
-			fmt.Println("unable to add msg")
 			return
 		}
+
 		log.Tracef("Receive upstream htlc with payment hash(%x), "+
 			"assigning index: %v", msg.PaymentHash[:], index)
-		fmt.Printf("Receive upstream htlc with payment hash(%x), "+
-			"assigning index: %v\n", msg.PaymentHash[:], index)
 
 	case *lnwire.UpdateFufillHTLC:
 		pre := msg.PaymentPreimage
@@ -823,27 +796,19 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		// If remote side have been unable to parse the onion blob we
 		// have sent to it, than we should transform the malformed HTLC
 		// message to the usual HTLC fail message.
-		amt, err := l.channel.ReceiveFailHTLC(msg.ID, b.Bytes())
+		_, err := l.channel.ReceiveFailHTLC(msg.ID, b.Bytes())
 		if err != nil {
 			l.fail("unable to handle upstream fail HTLC: %v", err)
 			return
 		}
-
-		// Increment the available bandwidth as they've removed our
-		// HTLC.
-		atomic.AddUint64(&l.availableBandwidth, uint64(amt))
 
 	case *lnwire.UpdateFailHTLC:
 		idx := msg.ID
-		amt, err := l.channel.ReceiveFailHTLC(idx, msg.Reason[:])
+		_, err := l.channel.ReceiveFailHTLC(idx, msg.Reason[:])
 		if err != nil {
 			l.fail("unable to handle upstream fail HTLC: %v", err)
 			return
 		}
-
-		// Increment the available bandwidth as they've removed our
-		// HTLC.
-		atomic.AddUint64(&l.availableBandwidth, uint64(amt))
 
 	case *lnwire.CommitSig:
 		// We just received a new updates to our local commitment chain,
@@ -883,12 +848,14 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		// then we don't need to reply with a signature as both sides
 		// already have a commitment with the latest accepted l.
 		if l.channel.FullySynced() {
+			//fmt.Println("NOT RESP")
 			return
 		}
 
 		// Otherwise, the remote party initiated the state transition,
 		// so we'll reply with a signature to provide them with their
 		// version of the latest commitment.
+		//fmt.Println("RESPOND SIG: ", spew.Sdump(l.cfg.Peer))
 		if err := l.updateCommitTx(); err != nil {
 			l.fail("unable to update commitment: %v", err)
 			return
@@ -1002,14 +969,17 @@ type getBandwidthCmd struct {
 }
 
 // Bandwidth returns the total amount that can flow through the channel link at
-// this given instance. The value returned is expressed in millatoshi and
-// can be used by callers when making forwarding decisions to determine if a
-// link can accept an HTLC.
+// this given instance. The value returned is expressed in millisatoshi and can
+// be used by callers when making forwarding decisions to determine if a link
+// can accept an HTLC.
 //
 // NOTE: Part of the ChannelLink interface.
 func (l *channelLink) Bandwidth() lnwire.MilliSatoshi {
-	// TODO(roasbeef): subtract reserverj
-	return lnwire.MilliSatoshi(atomic.LoadUint64(&l.availableBandwidth))
+	// TODO(roasbeef): subtract reserve
+	channelBandwidth := l.channel.AvailableBalance()
+	overflowBandwidth := l.overflowQueue.TotalHtlcAmount()
+
+	return channelBandwidth - overflowBandwidth
 }
 
 // policyUpdate is a message sent to a channel link when an outside sub-system
@@ -1069,10 +1039,7 @@ func (l *channelLink) String() string {
 //
 // NOTE: Part of the ChannelLink interface.
 func (l *channelLink) HandleSwitchPacket(packet *htlcPacket) {
-	select {
-	case l.downstream <- packet:
-	case <-l.quit:
-	}
+	l.mailBox.AddPacket(packet)
 }
 
 // HandleChannelUpdate handles the htlc requests as settle/add/fail which sent
@@ -1080,10 +1047,7 @@ func (l *channelLink) HandleSwitchPacket(packet *htlcPacket) {
 //
 // NOTE: Part of the ChannelLink interface.
 func (l *channelLink) HandleChannelUpdate(message lnwire.Message) {
-	select {
-	case l.upstream <- message:
-	case <-l.quit:
-	}
+	l.mailBox.AddMessage(message)
 }
 
 // updateChannelFee updates the commitment fee-per-kw on this channel by
@@ -1327,18 +1291,11 @@ func (l *channelLink) processLockedInHtlcs(
 				}
 
 				preimage := invoice.Terms.PaymentPreimage
-				logIndex, amt, err := l.channel.SettleHTLC(preimage)
+				logIndex, _, err := l.channel.SettleHTLC(preimage)
 				if err != nil {
 					l.fail("unable to settle htlc: %v", err)
 					return nil
 				}
-
-				// Increment the available bandwidth as we've
-				// settled an HTLC extended by tbe remote
-				// party.
-				atomic.AddUint64(
-					&l.availableBandwidth, uint64(amt),
-				)
 
 				// Notify the invoiceRegistry of the invoices
 				// we just settled with this latest commitment
@@ -1526,6 +1483,7 @@ func (l *channelLink) processLockedInHtlcs(
 		// With all the settle/cancel updates added to the local and
 		// remote HTLC logs, initiate a state transition by updating
 		// the remote commitment chain.
+		//fmt.Println("SETTLE SYNC")
 		if err := l.updateCommitTx(); err != nil {
 			l.fail("unable to update commitment: %v", err)
 			return nil

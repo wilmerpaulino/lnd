@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
@@ -898,7 +899,7 @@ func TestForceClose(t *testing.T) {
 
 	// Factoring in the fee rate, Alice's amount should properly reflect
 	// that we've added an additional HTLC to the commitment transaction.
-	totalCommitWeight := commitWeight + htlcWeight
+	totalCommitWeight := CommitWeight + HtlcWeight
 	feePerKw := aliceChannel.channelState.LocalCommitment.FeePerKw
 	commitFee := btcutil.Amount((int64(feePerKw) * totalCommitWeight) / 1000)
 	expectedAmount := (aliceChannel.Capacity / 2) - htlcAmount.ToSatoshis() - commitFee
@@ -1052,10 +1053,10 @@ func TestForceCloseDustOutput(t *testing.T) {
 	// ForceCloseSummary again on both peers.
 	htlc, preimage := createHTLC(0, bobAmount-htlcAmount)
 	if _, err := bobChannel.AddHTLC(htlc); err != nil {
-		t.Fatalf("alice unable to add htlc: %v", err)
+		t.Fatalf("bob unable to add htlc: %v", err)
 	}
 	if _, err := aliceChannel.ReceiveHTLC(htlc); err != nil {
-		t.Fatalf("bob unable to receive htlc: %v", err)
+		t.Fatalf("alice unable to receive htlc: %v", err)
 	}
 	if err := forceStateTransition(bobChannel, aliceChannel); err != nil {
 		t.Fatalf("Can't update the channel state: %v", err)
@@ -1085,7 +1086,8 @@ func TestForceCloseDustOutput(t *testing.T) {
 	// Alice's to-self output should still be in the commitment
 	// transaction.
 	if closeSummary.SelfOutputSignDesc == nil {
-		t.Fatalf("alice fails to include to-self output in ForceCloseSummary")
+		t.Fatalf("alice fails to include to-self output in " +
+			"ForceCloseSummary")
 	}
 	if !closeSummary.SelfOutputSignDesc.PubKey.IsEqual(
 		aliceChannel.channelState.LocalChanCfg.DelayBasePoint,
@@ -3355,6 +3357,119 @@ func TestChanSyncUnableToSync(t *testing.T) {
 	if err != ErrCannotSyncCommitChains {
 		t.Fatalf("expected error instead have: %v", err)
 	}
+}
+
+// TestChanAvailableBandwidth...
+func TestChanAvailableBandwidth(t *testing.T) {
+	t.Parallel()
+
+	// Create a test channel which will be used for the duration of this
+	// unittest. The channel will be funded evenly with Alice having 5 BTC,
+	// and Bob having 5 BTC.
+	aliceChannel, bobChannel, cleanUp, err := createTestChannels(1)
+	if err != nil {
+		t.Fatalf("unable to create test channels: %v", err)
+	}
+	defer cleanUp()
+
+	assertBandwidthEstimateCorrect := func(aliceInitiate bool) {
+		// With the HTLC's added, we'll now query the AvailableBalance
+		// method for the current available channel bandwidth from
+		// Alice's PoV.
+		aliceAvailableBalance := aliceChannel.AvailableBalance()
+
+		// With this balance obtained, we'll now trigger a state update
+		// to actually determine what the current up to date balance
+		// is.
+		if aliceInitiate {
+			err := forceStateTransition(aliceChannel, bobChannel)
+			if err != nil {
+				t.Fatalf("unable to complete alice's state "+
+					"transition: %v", err)
+			}
+		} else {
+			err := forceStateTransition(bobChannel, aliceChannel)
+			if err != nil {
+				t.Fatalf("unable to complete alice's state "+
+					"transition: %v", err)
+			}
+		}
+
+		// Now, we'll obtain the current available bandwidth in Alice's
+		// latest commitment and compare that to the prior estimate.
+		aliceBalance := aliceChannel.channelState.LocalCommitment.LocalBalance
+		if aliceBalance != aliceAvailableBalance {
+			_, _, line, _ := runtime.Caller(1)
+			t.Fatalf("line: %v, incorrect balance: expected %v, "+
+				"got %v", line, aliceBalance,
+				aliceAvailableBalance)
+		}
+	}
+
+	// First, we'll add 3 outgoing HTLC's from Alice to Bob.
+	const numHtlcs = 3
+	var htlcAmt lnwire.MilliSatoshi = 100000
+	alicePreimages := make([][32]byte, numHtlcs)
+	for i := 0; i < numHtlcs; i++ {
+		htlc, preImage := createHTLC(i, htlcAmt)
+		if _, err := aliceChannel.AddHTLC(htlc); err != nil {
+			t.Fatalf("unable to add htlc: %v", err)
+		}
+		if _, err := bobChannel.ReceiveHTLC(htlc); err != nil {
+			t.Fatalf("unable to recv htlc: %v", err)
+		}
+
+		alicePreimages[i] = preImage
+	}
+
+	assertBandwidthEstimateCorrect(true)
+
+	// We'll repeat the same exercise, but with non-dust HTLCs. So we'll
+	// crank up the value of the HTLC's we're adding to the commitment
+	// transaction.
+	htlcAmt = lnwire.NewMSatFromSatoshis(30000)
+	for i := 0; i < numHtlcs; i++ {
+		htlc, preImage := createHTLC(i, htlcAmt)
+		if _, err := aliceChannel.AddHTLC(htlc); err != nil {
+			t.Fatalf("unable to add htlc: %v", err)
+		}
+		if _, err := bobChannel.ReceiveHTLC(htlc); err != nil {
+			t.Fatalf("unable to recv htlc: %v", err)
+		}
+
+		alicePreimages = append(alicePreimages, preImage)
+	}
+
+	assertBandwidthEstimateCorrect(true)
+
+	// Next, we'll have Bob 5 of Alice's HTLC's, and cancel one of them (in
+	// the update log).
+	for i := 0; i < (numHtlcs*2)-1; i++ {
+		preImage := alicePreimages[i]
+		settleIndex, _, err := bobChannel.SettleHTLC(preImage)
+		if err != nil {
+			t.Fatalf("unable to settle htlc: %v", err)
+		}
+		err = aliceChannel.ReceiveHTLCSettle(preImage, settleIndex)
+		if err != nil {
+			t.Fatalf("unable to settle htlc: %v", err)
+		}
+	}
+	failHash := sha256.Sum256(alicePreimages[5][:])
+	failIndex, err := bobChannel.FailHTLC(failHash, []byte("f"))
+	if err != nil {
+		t.Fatalf("unable to cancel HTLC: %v", err)
+	}
+	_, err = aliceChannel.ReceiveFailHTLC(failIndex, []byte("bad"))
+	if err != nil {
+		t.Fatalf("unable to recv htlc cancel: %v", err)
+	}
+
+	// With the HTLC's settled in the log, we'll now assert that if we
+	// initiate a state transition, then our guess was correct.
+	assertBandwidthEstimateCorrect(false)
+
+	// TODO(roasbeef): additional tests from diff starting conditions
 }
 
 // TODO(roasbeef): testing.Quick test case for retrans!!!

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 	"time"
 
@@ -218,6 +219,7 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 		RevocationStore:         shachain.NewRevocationStore(),
 		LocalCommitment:         aliceCommit,
 		RemoteCommitment:        aliceCommit,
+		ShortChanID:             chanID,
 		Db:                      dbAlice,
 	}
 
@@ -234,6 +236,7 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 		RevocationStore:         shachain.NewRevocationStore(),
 		LocalCommitment:         bobCommit,
 		RemoteCommitment:        bobCommit,
+		ShortChanID:             chanID,
 		Db:                      dbBob,
 	}
 
@@ -302,6 +305,7 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 			return nil, nil, errors.New("unable to find stored alice channel")
 		}
 
+		fmt.Println("restart alice")
 		newAliceChannel, err := lnwallet.NewLightningChannel(aliceSigner,
 			nil, estimator, aliceStoredChannel)
 		if err != nil {
@@ -327,6 +331,7 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 			return nil, nil, errors.New("unable to find stored bob channel")
 		}
 
+		fmt.Println("restart bob")
 		newBobChannel, err := lnwallet.NewLightningChannel(bobSigner, nil,
 			estimator, bobStoredChannel)
 		if err != nil {
@@ -355,8 +360,10 @@ func getChanID(msg lnwire.Message) (lnwire.ChannelID, error) {
 		chanID = msg.ChanID
 	case *lnwire.ChannelReestablish:
 		chanID = msg.ChanID
+	case *lnwire.FundingLocked:
+		chanID = msg.ChanID
 	default:
-		return chanID, errors.New("unknown type")
+		return chanID, fmt.Errorf("unknown type: %T", msg)
 	}
 
 	return chanID, nil
@@ -682,13 +689,12 @@ func createClusterChannels(aliceToBob, bobToCarol btcutil.Amount) (
 //
 func newThreeHopNetwork(t *testing.T, aliceChannel, firstBobChannel,
 	secondBobChannel, carolChannel *lnwallet.LightningChannel,
-	serverErr chan error,
 	startingHeight uint32) *threeHopNetwork {
 
 	// Create three peers/servers.
-	aliceServer := newMockServer("alice", serverErr)
-	bobServer := newMockServer("bob", serverErr)
-	carolServer := newMockServer("carol", serverErr)
+	aliceServer := newMockServer(t, "alice")
+	bobServer := newMockServer(t, "bob")
+	carolServer := newMockServer(t, "carol")
 
 	// Create mock decoder instead of sphinx one in order to mock the
 	// route which htlc should follow.
@@ -718,8 +724,7 @@ func newThreeHopNetwork(t *testing.T, aliceChannel, firstBobChannel,
 			GetLastChannelUpdate: mockGetChanUpdateMessage,
 			Registry:             aliceServer.registry,
 			BlockEpochs:          globalEpoch,
-			//SyncStates:           true,
-			SyncStates: false,
+			SyncStates:           true,
 		},
 		aliceChannel,
 		startingHeight,
@@ -741,8 +746,7 @@ func newThreeHopNetwork(t *testing.T, aliceChannel, firstBobChannel,
 			GetLastChannelUpdate: mockGetChanUpdateMessage,
 			Registry:             bobServer.registry,
 			BlockEpochs:          globalEpoch,
-			//SyncStates:           true,
-			SyncStates: false,
+			SyncStates:           true,
 		},
 		firstBobChannel,
 		startingHeight,
@@ -764,8 +768,7 @@ func newThreeHopNetwork(t *testing.T, aliceChannel, firstBobChannel,
 			GetLastChannelUpdate: mockGetChanUpdateMessage,
 			Registry:             bobServer.registry,
 			BlockEpochs:          globalEpoch,
-			//SyncStates:           true,
-			SyncStates: false,
+			SyncStates:           true,
 		},
 		secondBobChannel,
 		startingHeight,
@@ -787,8 +790,7 @@ func newThreeHopNetwork(t *testing.T, aliceChannel, firstBobChannel,
 			GetLastChannelUpdate: mockGetChanUpdateMessage,
 			Registry:             carolServer.registry,
 			BlockEpochs:          globalEpoch,
-			//SyncStates:           true,
-			SyncStates: false,
+			SyncStates:           true,
 		},
 		carolChannel,
 		startingHeight,

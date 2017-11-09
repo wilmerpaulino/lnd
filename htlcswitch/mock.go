@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"testing"
 
 	"io"
 	"sync/atomic"
@@ -12,7 +13,6 @@ import (
 	"bytes"
 
 	"github.com/btcsuite/fastsha256"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -30,6 +30,8 @@ type mockServer struct {
 	wg       sync.WaitGroup
 	quit     chan struct{}
 
+	t *testing.T
+
 	name     string
 	messages chan lnwire.Message
 
@@ -44,13 +46,13 @@ type mockServer struct {
 
 var _ Peer = (*mockServer)(nil)
 
-func newMockServer(name string, errChan chan error) *mockServer {
+func newMockServer(t *testing.T, name string) *mockServer {
 	var id [33]byte
 	h := sha256.Sum256([]byte(name))
 	copy(id[:], h[:])
 
 	return &mockServer{
-		errChan:          errChan,
+		t:                t,
 		id:               id,
 		name:             name,
 		messages:         make(chan lnwire.Message, 3000),
@@ -83,33 +85,25 @@ func (s *mockServer) Start() error {
 			case msg := <-s.messages:
 				var shouldSkip bool
 
-				fmt.Println("got msgs: ", s.name, spew.Sdump(msg))
 				for _, interceptor := range s.interceptorFuncs {
-					fmt.Println("trying to intercept")
 					skip, err := interceptor(msg)
 					if err != nil {
-						fmt.Println("NOPE: ", err)
-						s.fail(errors.Errorf("%v: error in the "+
-							"interceptor: %v", s.name, err))
+						s.t.Fatalf("%v: error in the "+
+							"interceptor: %v", s.name, err)
 						return
 					}
 					shouldSkip = shouldSkip || skip
 				}
-				fmt.Println("YUHHH")
 
 				if shouldSkip {
-					fmt.Println("SKIPPING !!!!")
 					continue
 				}
 
-				fmt.Println("processing")
 				if err := s.readHandler(msg); err != nil {
 					fmt.Printf("unable to proc: %v\n", err)
-					s.fail(err)
-					t.Fatalf(err)
+					s.t.Fatal(err)
 					return
 				}
-				fmt.Println("fin")
 			case <-s.quit:
 				return
 			}
@@ -280,13 +274,13 @@ func (s *mockServer) intersect(f messageInterceptor) {
 }
 
 func (s *mockServer) SendMessage(message lnwire.Message) error {
-	fmt.Println("sending", s.name, spew.Sdump(message))
+	//fmt.Println("SENDING: ", message.MsgType())
+
 	select {
 	case s.messages <- message:
 	case <-s.quit:
 		return errors.New("server is stopped")
 	}
-	fmt.Println("SENT!!!")
 
 	return nil
 }
@@ -313,32 +307,19 @@ func (s *mockServer) readHandler(message lnwire.Message) error {
 	case *lnwire.ChannelReestablish:
 		targetChan = msg.ChanID
 	default:
-		return errors.New("unknown message type")
+		return fmt.Errorf("unknown message type: %T", msg)
 	}
-
-	fmt.Println("got msg: ", s.name, spew.Sdump(message))
 
 	// Dispatch the commitment update message to the proper
 	// channel link dedicated to this channel.
 	link, err := s.htlcSwitch.GetLink(targetChan)
 	if err != nil {
-		fmt.Println("can't get link: ", s.name)
 		return err
 	}
 
 	// Create goroutine for this, in order to be able to properly stop
 	// the server when handler stacked (server unavailable)
-	done := make(chan struct{})
-	go func() {
-		fmt.Println("handling update: ", s.name)
-		link.HandleChannelUpdate(message)
-		done <- struct{}{}
-		fmt.Println("update fin: ", s.name)
-	}()
-	select {
-	case <-done:
-	case <-s.quit:
-	}
+	link.HandleChannelUpdate(message)
 
 	return nil
 }
@@ -350,7 +331,7 @@ func (s *mockServer) PubKey() [33]byte {
 func (s *mockServer) Disconnect(reason error) {
 	fmt.Printf("server %v disconnected due to %v\n", s.name, reason)
 
-	s.fail(errors.Errorf("server %v was disconnected: %v", s.name, reason))
+	s.t.Fatalf("server %v was disconnected: %v", s.name, reason)
 }
 
 func (s *mockServer) WipeChannel(*lnwallet.LightningChannel) error {

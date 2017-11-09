@@ -6,6 +6,14 @@ import (
 )
 
 const (
+	// CommitWeight...
+	CommitWeight int64 = 724
+
+	// HtlcWeight...
+	HtlcWeight int64 = 172
+)
+
+const (
 	// witnessScaleFactor determines the level of "discount" witness data
 	// receives compared to "base" data. A scale factor of 4, denotes that
 	// witness data is 1/4 as cheap as regular non-witness data. Value copied

@@ -720,8 +720,9 @@ func (lc *LightningChannel) diskCommitToMemCommit(isLocal, isPendingCommit bool,
 	//   * SAME FOR PAY DESCS??
 
 	// TODO(roasbeef): have log indexes incorrect
+	//  * need to special case them as well?
 
-	// With the necessary items generated, we'll now re=construct the
+	// With the necessary items generated, we'll now re-construct the
 	// commitment state as it was originally present in memory.
 	commit := &commitment{
 		height:            diskCommit.CommitHeight,
@@ -1174,10 +1175,6 @@ type LightningChannel struct {
 	// channel.
 	RemoteFundingKey *btcec.PublicKey
 
-	// availableLocalBalance represent the amount of available money which
-	// might be processed by this channel at the specific point of time.
-	availableLocalBalance lnwire.MilliSatoshi
-
 	sync.RWMutex
 
 	wg sync.WaitGroup
@@ -1314,10 +1311,6 @@ func NewLightningChannel(signer Signer, events chainntnfs.ChainNotifier,
 		go lc.closeObserver(channelCloseNtfn)
 	}
 
-	// Initialize the available local balance
-	s := lc.StateSnapshot()
-	lc.availableLocalBalance = s.LocalBalance
-
 	// Finally, we'll kick of the signature job pool to handle any upcoming
 	// commitment state generation and validation.
 	if lc.sigPool.Start(); err != nil {
@@ -1395,8 +1388,6 @@ func (lc *LightningChannel) logUpdateToPayDesc(logUpdate *channeldb.LogUpdate,
 			pd.theirPkScript = theirP2WSH
 			pd.theirWitnessScript = theirWitnessScript
 		}
-
-		// TODO(roasbeef): need to modify availableLocalBalance?
 
 	// For HTLC's we we're offered we'll fetch the original offered HTLc
 	// from the remote party's update log so we can retrieve the same
@@ -1509,32 +1500,36 @@ func (lc *LightningChannel) restoreCommitState(
 	)
 
 	var (
-		pendingRemoteCommit   *channeldb.CommitDiff
-		pendingRemoteKeyChain *commitmentKeyRing
+		pendingRemoteCommit     *commitment
+		pendingRemoteCommitDiff *channeldb.CommitDiff
+		pendingRemoteKeyChain   *commitmentKeyRing
 	)
 
 	// Next, we'll check to see if we have an un-acked commitment state we
 	// extended to the remote party but which was never ACK'd.
-	pendingRemoteCommit, err = lc.channelState.RemoteCommitChainTip()
+	pendingRemoteCommitDiff, err = lc.channelState.RemoteCommitChainTip()
 	if err != nil && err != channeldb.ErrNoPendingCommit {
 		return nil
 	}
 
-	if pendingRemoteCommit != nil {
+	if pendingRemoteCommitDiff != nil {
 		// If we have a pending remote commitment, then we'll also
 		// reconstruct the original commitment for that state,
 		// inserting it into the remote party's commitment chain. We
 		// don't pass our commit point as we don't have the
 		// corresponding state for the local commitment chain.
 		pendingCommitPoint := lc.channelState.RemoteNextRevocation
-		remoteCommit, err := lc.diskCommitToMemCommit(
-			false, true, &pendingRemoteCommit.Commitment,
+		pendingRemoteCommit, err = lc.diskCommitToMemCommit(
+			false, true, &pendingRemoteCommitDiff.Commitment,
 			nil, pendingCommitPoint,
 		)
 		if err != nil {
 			return err
 		}
-		lc.remoteCommitChain.addCommitment(remoteCommit)
+		lc.remoteCommitChain.addCommitment(pendingRemoteCommit)
+
+		//fmt.Println("restored pending commit: ",
+		//	spew.Sdump(pendingRemoteCommit))
 
 		// We'll also re-create the set of commitment keys needed to
 		// fully re-derive the state.
@@ -1542,6 +1537,9 @@ func (lc *LightningChannel) restoreCommitState(
 			pendingCommitPoint, false, lc.localChanCfg,
 			lc.remoteChanCfg,
 		)
+
+		// TODO(roasbeef): update remote log to this?
+		//remoteUpdateLog.
 	}
 
 	// TODO(roasbeef): MOAR LOGGING
@@ -1549,8 +1547,9 @@ func (lc *LightningChannel) restoreCommitState(
 	// Finally, with the commitment states restored, we'll now restore the
 	// state logs based on the current local+remote commit, and any pending
 	// remote commit that exists.
-	err = lc.restoreStateLogs(localCommit, remoteCommit,
-		pendingRemoteCommit, pendingRemoteKeyChain,
+	//fmt.Println("restore log")
+	err = lc.restoreStateLogs(localCommit, remoteCommit, pendingRemoteCommit,
+		pendingRemoteCommitDiff, pendingRemoteKeyChain,
 	)
 	if err != nil {
 		return err
@@ -1564,8 +1563,8 @@ func (lc *LightningChannel) restoreCommitState(
 // remote) for each HTLC read from disk. This method is required to sync the
 // in-memory state of the state machine with that read from persistent storage.
 func (lc *LightningChannel) restoreStateLogs(
-	localCommitment, remoteCommitment *commitment,
-	pendingRemoteCommit *channeldb.CommitDiff,
+	localCommitment, remoteCommitment, pendingRemoteCommit *commitment,
+	pendingRemoteCommitDiff *channeldb.CommitDiff,
 	pendingRemoteKeys *commitmentKeyRing) error {
 
 	// TODO(roasbeef): need to do both??
@@ -1593,6 +1592,7 @@ func (lc *LightningChannel) restoreStateLogs(
 	// The restoreHtlc method will de-dup the HTLC's to handle this case.
 	for i := range remoteCommitment.incomingHTLCs {
 		htlc := remoteCommitment.incomingHTLCs[i]
+		//fmt.Println("REMOTE ADDING HTLC: ", spew.Sdump(htlc))
 		lc.remoteUpdateLog.restoreHtlc(&htlc)
 
 		//lc.rHashMap[htlc.RHash] = append(lc.rHashMap[htlc.RHash], &htlc)
@@ -1608,12 +1608,22 @@ func (lc *LightningChannel) restoreStateLogs(
 		return nil
 	}
 
-	pendingCommit := pendingRemoteCommit.Commitment
+	// TODO(roasbeef): comment, need to insert their incoming updates, not
+	// outgoing as covered for
+	//  * also update their log to account for new state
+	for i := range pendingRemoteCommit.incomingHTLCs {
+		htlc := pendingRemoteCommit.incomingHTLCs[i]
+		lc.remoteUpdateLog.restoreHtlc(&htlc)
+	}
+	lc.remoteUpdateLog.logIndex = pendingRemoteCommit.theirMessageIndex
+	lc.remoteUpdateLog.htlcCounter = pendingRemoteCommit.theirHtlcIndex
+
+	pendingCommit := pendingRemoteCommitDiff.Commitment
 	pendingHeight := pendingCommit.CommitHeight
 
 	// If we did have a dangling commit, then we'll examine which updates
 	// we included in that state and re-insert them into our update log.
-	for _, logUpdate := range pendingRemoteCommit.LogUpdates {
+	for _, logUpdate := range pendingRemoteCommitDiff.LogUpdates {
 		payDesc, err := lc.logUpdateToPayDesc(
 			&logUpdate, lc.remoteUpdateLog, pendingHeight,
 			pendingCommit.FeePerKw, pendingRemoteKeys,
@@ -2271,21 +2281,17 @@ func (lc *LightningChannel) fetchCommitmentView(remoteChain bool,
 		dustLimit = lc.localChanCfg.DustLimit
 	}
 
-	// TODO(roasbeef): also need to add in htlc index
 	c := &commitment{
-		ourBalance:   ourBalance,
-		theirBalance: theirBalance,
-
-		ourMessageIndex: ourLogIndex,
-		ourHtlcIndex:    ourHtlcIndex,
-
+		ourBalance:        ourBalance,
+		theirBalance:      theirBalance,
+		ourMessageIndex:   ourLogIndex,
+		ourHtlcIndex:      ourHtlcIndex,
 		theirMessageIndex: theirLogIndex,
 		theirHtlcIndex:    theirHtlcIndex,
-
-		height:    nextHeight,
-		feePerKw:  feePerKw,
-		dustLimit: dustLimit,
-		isOurs:    !remoteChain,
+		height:            nextHeight,
+		feePerKw:          feePerKw,
+		dustLimit:         dustLimit,
+		isOurs:            !remoteChain,
 	}
 
 	// Actually generate unsigned commitment transaction for this view.
@@ -2346,11 +2352,14 @@ func (lc *LightningChannel) createCommitmentTx(c *commitment,
 	// on its total weight. Once we have the total weight, we'll multiply
 	// by the current fee-per-kw, then divide by 1000 to get the proper
 	// fee.
-	totalCommitWeight := commitWeight + (htlcWeight * numHTLCs)
+	totalCommitWeight := CommitWeight + (HtlcWeight * numHTLCs)
+	//fmt.Println("num htlcs proper: ", numHTLCs)
+	//fmt.Println("total w: ", totalCommitWeight)
 
 	// With the weight known, we can now calculate the commitment fee,
 	// ensuring that we account for any dust outputs trimmed above.
 	commitFee := btcutil.Amount((int64(c.feePerKw) * totalCommitWeight) / 1000)
+	//fmt.Println("fee: ", lnwire.NewMSatFromSatoshis(commitFee))
 
 	// Currently, within the protocol, the initiator always pays the fees.
 	// So we'll subtract the fee amount from the balance of the current
@@ -2890,8 +2899,15 @@ func (lc *LightningChannel) SignNextCommitment() (*btcec.Signature, []*btcec.Sig
 		return nil, nil, err
 	}
 
-	walletLog.Tracef("ChannelPoint(%v): extending remote chain to height %v",
-		lc.channelState.FundingOutpoint, newCommitView.height)
+	walletLog.Tracef("ChannelPoint(%v): extending remote chain to height %v, "+
+		"local_log=%v, remote_log=%v",
+		lc.channelState.FundingOutpoint, newCommitView.height,
+		lc.localUpdateLog.logIndex, remoteACKedIndex)
+
+	/*fmt.Printf("ChannelPoint(%v): extending remote chain to height %v, "+
+	"local_log=%v, remote_log=%v\n",
+	lc.channelState.FundingOutpoint, newCommitView.height,
+	lc.localUpdateLog.logIndex, remoteACKedIndex)*/
 
 	walletLog.Tracef("ChannelPoint(%v): remote chain: our_balance=%v, "+
 		"their_balance=%v, commit_tx: %v",
@@ -3035,6 +3051,8 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 		}
 		updates = append(updates, revocationMsg)
 
+		//fmt.Println("OWE REVOCATION")
+
 		// Next, as a precaution, we'll check a special edge case. If
 		// they initiated a state transition, we sent the revocation,
 		// but died before the signature was sent. We re-transmit our
@@ -3042,6 +3060,8 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 		// them.
 		if lc.localCommitChain.tip().height >
 			lc.remoteCommitChain.tip().height {
+
+			//fmt.Println("SENDING EXATRA!!!!")
 
 			commitSig, htlcSigs, err := lc.SignNextCommitment()
 			if err != nil {
@@ -3074,6 +3094,8 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 			return nil, err
 		}
 
+		//fmt.Println("OWE SIG")
+
 		// Next, we'll need to send over any updates we sent as part of
 		// this new proposed commitment state.
 		for _, logUpdate := range commitDiff.LogUpdates {
@@ -3088,7 +3110,9 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 		// If we don't owe them a commitment, yet the tip of their chain isn't
 		// one more than the next local commit height they report, we'll fail
 		// the channel.
-	} else if !oweCommitment && remoteChainTip.height+1 != msg.NextLocalCommitHeight {
+	} else if !oweCommitment && remoteChainTip.height+1 !=
+		msg.NextLocalCommitHeight {
+
 		return nil, ErrCannotSyncCommitChains
 	}
 
@@ -3101,7 +3125,7 @@ func (lc *LightningChannel) ProcessChanSyncMsg(msg *lnwire.ChannelReestablish) (
 // commitment chains in the case of a last or only partially processed message.
 // When the remote party receiver this message one of three things may happen:
 //
-//   1. We're filly synced and no messages need to be sent.
+//   1. We're fully synced and no messages need to be sent.
 //   2. We didn't get the lat CommitSig message they sent, to they'll re-send
 //      it.
 //   3. We didn't get the last RevokeAndAck message they sent, so they'll
@@ -3187,6 +3211,7 @@ func (lc *LightningChannel) validateCommitmentSanity(theirLogCounter,
 		maxHTLCNumber = MaxHTLCNumber / 2
 	}
 
+	//fmt.Println("num h: ", htlcCount, maxHTLCNumber)
 	if htlcCount > maxHTLCNumber {
 		return ErrMaxHTLCNumber
 	}
@@ -3380,8 +3405,15 @@ func (lc *LightningChannel) ReceiveNewCommitment(commitSig *btcec.Signature,
 		return err
 	}
 
-	walletLog.Tracef("ChannelPoint(%v): extending local chain to height %v",
-		lc.channelState.FundingOutpoint, localCommitmentView.height)
+	walletLog.Tracef("ChannelPoint(%v): extending local chain to height %v, "+
+		"local_log=%v, remote_log=%v",
+		lc.channelState.FundingOutpoint, localCommitmentView.height,
+		localACKedIndex, lc.remoteUpdateLog.logIndex)
+
+	/*fmt.Printf("ChannelPoint(%v): extending local chain to height %v, "+
+	"local_log=%v, remote_log=%v\n",
+	lc.channelState.FundingOutpoint, localCommitmentView.height,
+	localACKedIndex, lc.remoteUpdateLog.logIndex)*/
 
 	walletLog.Tracef("ChannelPoint(%v): local chain: our_balance=%v, "+
 		"their_balance=%v, commit_tx: %v", lc.channelState.FundingOutpoint,
@@ -3468,12 +3500,22 @@ func (lc *LightningChannel) FullySynced() bool {
 
 	oweCommitment := lastLocalCommit.height > lastRemoteCommit.height
 
+	//fmt.Println("local height %v, remote height %v",
+	//lastLocalCommit.height, lastRemoteCommit.height)
+
 	localUpdatesSynced :=
 		lastLocalCommit.ourMessageIndex == lastRemoteCommit.ourMessageIndex
+
+	//fmt.Printf("our local index %v, our remote index %v\n", lastLocalCommit.ourMessageIndex,
+	//lastRemoteCommit.ourMessageIndex)
 
 	remoteUpdatesSynced :=
 		lastLocalCommit.theirMessageIndex == lastRemoteCommit.theirMessageIndex
 
+	//fmt.Printf("their local index %v, their remote index %v\n", lastLocalCommit.theirMessageIndex,
+	//lastRemoteCommit.theirMessageIndex)
+
+	//fmt.Println("are synced ", !oweCommitment && localUpdatesSynced && remoteUpdatesSynced)
 	return !oweCommitment && localUpdatesSynced && remoteUpdatesSynced
 }
 
@@ -3512,6 +3554,11 @@ func (lc *LightningChannel) RevokeCurrentCommitment() (*lnwire.RevokeAndAck, err
 		"our_balance=%v, their_balance=%v",
 		lc.channelState.FundingOutpoint, chainTail.ourBalance,
 		chainTail.theirBalance)
+
+	/*fmt.Printf("ChannelPoint(%v): state transition accepted: "+
+	"our_balance=%v, their_balance=%v\n",
+	lc.channelState.FundingOutpoint, chainTail.ourBalance,
+	chainTail.theirBalance)*/
 
 	revocationMsg.ChanID = lnwire.NewChanIDFromOutPoint(
 		&lc.channelState.FundingOutpoint,
@@ -3564,6 +3611,11 @@ func (lc *LightningChannel) ReceiveRevocation(revMsg *lnwire.RevokeAndAck) ([]*P
 		"revoked height %v, now at %v", lc.channelState.FundingOutpoint,
 		lc.remoteCommitChain.tail().height,
 		lc.remoteCommitChain.tail().height+1)
+
+	/*fmt.Printf("ChannelPoint(%v): remote party accepted state transition, "+
+	"revoked height %v, now at %v\n", lc.channelState.FundingOutpoint,
+	lc.remoteCommitChain.tail().height,
+	lc.remoteCommitChain.tail().height+1)*/
 
 	// At this point, the revocation has been accepted, and we've rotated
 	// the current revocation key+hash for the remote party. Therefore we
@@ -3663,10 +3715,29 @@ func (lc *LightningChannel) AddHTLC(htlc *lnwire.UpdateAddHTLC) (uint64, error) 
 		return 0, err
 	}
 
-	if lc.availableLocalBalance < htlc.Amount {
+	// TODO(roasbeef): remove available bandwidth,
+	//  * use AvailableBalance() instead?
+	//  * should factor in weight as well
+
+	availableBalance := lc.availableBalance()
+	availableBalance -= htlc.Amount
+
+	feePerKw := lc.channelState.LocalCommitment.FeePerKw
+	dustLimit := lc.channelState.LocalChanCfg.DustLimit
+	htlcIsDust := htlcIsDust(
+		false, true, feePerKw, htlc.Amount.ToSatoshis(), dustLimit,
+	)
+	if !htlcIsDust && lc.channelState.IsInitiator {
+		htlcFee := lnwire.NewMSatFromSatoshis(
+			btcutil.Amount((int64(feePerKw) * HtlcWeight) / 1000),
+		)
+		availableBalance -= htlcFee
+	}
+
+	// TODO(roasbeef): also needs to respect reservation
+	if availableBalance < 0 {
 		return 0, ErrInsufficientBalance
 	}
-	lc.availableLocalBalance -= htlc.Amount
 
 	pd := &PaymentDescriptor{
 		EntryType: Add,
@@ -3725,6 +3796,8 @@ func (lc *LightningChannel) SettleHTLC(preimage [32]byte) (uint64,
 	paymentHash := sha256.Sum256(preimage[:])
 	targetHTLCs, ok := lc.rHashMap[paymentHash]
 	if !ok {
+		fmt.Printf("invalid payment hash(%v)\n",
+			hex.EncodeToString(paymentHash[:]))
 		return 0, 0, fmt.Errorf("invalid payment hash(%v)",
 			hex.EncodeToString(paymentHash[:]))
 	}
@@ -3746,7 +3819,6 @@ func (lc *LightningChannel) SettleHTLC(preimage [32]byte) (uint64,
 		delete(lc.rHashMap, paymentHash)
 	}
 
-	lc.availableLocalBalance += pd.Amount
 	return targetHTLC.HtlcIndex, targetHTLC.Amount, nil
 }
 
@@ -3880,7 +3952,6 @@ func (lc *LightningChannel) ReceiveFailHTLC(htlcIndex uint64,
 	}
 
 	lc.remoteUpdateLog.appendUpdate(pd)
-	lc.availableLocalBalance += pd.Amount
 
 	return htlc.Amount, nil
 }
@@ -4533,6 +4604,140 @@ func (lc *LightningChannel) DeleteState(c *channeldb.ChannelCloseSummary) error 
 	return lc.channelState.CloseChannel(c)
 }
 
+// AvailableBalance...
+func (lc *LightningChannel) AvailableBalance() lnwire.MilliSatoshi {
+	lc.RLock()
+	defer lc.RUnlock()
+
+	return lc.availableBalance()
+}
+
+// availableBalance...
+func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
+	// TODO(roasbeef): optimize
+
+	settledBalance := lc.channelState.LocalCommitment.LocalBalance
+	if lc.channelState.IsInitiator {
+		settledBalance += lnwire.NewMSatFromSatoshis(
+			lc.localCommitChain.tip().fee,
+		)
+	}
+
+	htlcView := lc.fetchHTLCView(lc.remoteUpdateLog.logIndex,
+		lc.localUpdateLog.logIndex)
+	feePerKw := lc.channelState.LocalCommitment.FeePerKw
+	dustLimit := lc.channelState.LocalChanCfg.DustLimit
+
+	var totalHtlcWeight int64
+	for _, htlc := range lc.channelState.LocalCommitment.Htlcs {
+		if htlcIsDust(false, true, feePerKw, htlc.Amt.ToSatoshis(), dustLimit) {
+			continue
+		}
+
+		totalHtlcWeight += HtlcWeight
+	}
+
+	i := 0
+	//fmt.Println("our up: ", spew.Sdump(htlcView.ourUpdates))
+	fmt.Println("he: ", totalHtlcWeight)
+	for _, entry := range htlcView.ourUpdates {
+		switch {
+		case entry.EntryType == Add && entry.addCommitHeightLocal == 0:
+			settledBalance -= entry.Amount
+
+			//fmt.Println("fee: ", feePerKw)
+			//fmt.Println("limit: ", dustLimit)
+			//fmt.Println("sat: ", entry.Amount.ToSatoshis())
+			if htlcIsDust(false, true, feePerKw, entry.Amount.ToSatoshis(),
+				dustLimit) {
+				//fmt.Println("DUST")
+				continue
+
+			}
+
+			if lc.channelState.IsInitiator {
+				//fmt.Println("ADDING H")
+			}
+
+			i++
+
+			fmt.Println("OUR ADD")
+			totalHtlcWeight += HtlcWeight
+
+		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
+			fmt.Println("WE SETTLE")
+			if totalHtlcWeight != 0 {
+				fmt.Println("minw")
+				totalHtlcWeight -= HtlcWeight
+			}
+
+			settledBalance += entry.Amount
+
+		case entry.EntryType == Fail && entry.removeCommitHeightLocal == 0:
+			fallthrough
+		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
+			if totalHtlcWeight != 0 {
+				totalHtlcWeight -= HtlcWeight
+			}
+			fmt.Println("FAIL")
+		}
+
+		// TODO(roasbeef): also need to modify weight in each case ^
+	}
+	fmt.Println("m he: ", totalHtlcWeight)
+	for _, entry := range htlcView.theirUpdates {
+		switch {
+		case entry.EntryType == Add && entry.addCommitHeightLocal == 0:
+			if htlcIsDust(true, true, feePerKw, entry.Amount.ToSatoshis(),
+				dustLimit) {
+				continue
+
+			}
+
+			fmt.Println("THEY ADDED")
+
+			totalHtlcWeight += HtlcWeight
+
+		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
+			if totalHtlcWeight != 0 {
+				fmt.Println("sub")
+				totalHtlcWeight -= HtlcWeight
+			}
+
+		case entry.EntryType == Fail && entry.removeCommitHeightLocal == 0:
+			fallthrough
+		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
+			if totalHtlcWeight != 0 {
+				fmt.Println("sub")
+				totalHtlcWeight -= HtlcWeight
+			}
+			fmt.Println("THEY FAIL")
+
+			settledBalance += entry.Amount
+		}
+
+	}
+
+	if lc.channelState.IsInitiator {
+		fmt.Println("htlc w: ", totalHtlcWeight)
+		totalCommitWeight := CommitWeight + totalHtlcWeight
+		additionalFee := lnwire.NewMSatFromSatoshis(
+			btcutil.Amount((int64(feePerKw) * totalCommitWeight) / 1000),
+		)
+
+		fmt.Println("est total w: ", totalCommitWeight)
+		fmt.Println("est htlc fee: ", additionalFee)
+		settledBalance -= additionalFee
+	}
+
+	if lc.channelState.IsInitiator {
+		fmt.Println("test num h: ", i)
+		fmt.Println("est total b: ", settledBalance)
+	}
+
+	return settledBalance
+}
+
 // StateSnapshot returns a snapshot of the current fully committed state within
 // the channel.
 func (lc *LightningChannel) StateSnapshot() *channeldb.ChannelSnapshot {
@@ -4715,7 +4920,7 @@ func CreateCooperativeCloseTx(fundingTxIn *wire.TxIn,
 // CalcFee returns the commitment fee to use for the given
 // fee rate (fee-per-kw).
 func (lc *LightningChannel) CalcFee(feeRate uint64) uint64 {
-	return (feeRate * uint64(commitWeight)) / 1000
+	return (feeRate * uint64(CommitWeight)) / 1000
 }
 
 // RemoteNextRevocation returns the channelState's RemoteNextRevocation.
