@@ -1470,6 +1470,10 @@ func assertLinkBandwidth(t *testing.T, link ChannelLink,
 func TestChannelLinkBandwidthConsistency(t *testing.T) {
 	t.Parallel()
 
+	// TODO(roasbeef): replace manual bit twiddling with concept of
+	// resource cost for packets?
+	//  * or also able to consult link
+
 	// We'll start the test by creating a single instance of
 	const chanAmt = btcutil.SatoshiPerBitcoin * 5
 	aliceLink, cleanUp, err := newSingleLinkTestHarness(chanAmt)

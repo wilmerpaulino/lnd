@@ -4666,19 +4666,15 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 
 		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
 			fmt.Println("WE SETTLE")
-			if totalHtlcWeight != 0 {
-				fmt.Println("minw")
-				totalHtlcWeight -= HtlcWeight
-			}
+			fmt.Println("minw")
+			totalHtlcWeight -= HtlcWeight
 
 			settledBalance += entry.Amount
 
 		case entry.EntryType == Fail && entry.removeCommitHeightLocal == 0:
 			fallthrough
 		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
-			if totalHtlcWeight != 0 {
-				totalHtlcWeight -= HtlcWeight
-			}
+			totalHtlcWeight -= HtlcWeight
 			fmt.Println("FAIL")
 		}
 
@@ -4699,23 +4695,24 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 			totalHtlcWeight += HtlcWeight
 
 		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
-			if totalHtlcWeight != 0 {
-				fmt.Println("sub")
-				totalHtlcWeight -= HtlcWeight
-			}
+			fmt.Println("sub")
+			fmt.Println("THEY SETTLE")
+			totalHtlcWeight -= HtlcWeight
 
 		case entry.EntryType == Fail && entry.removeCommitHeightLocal == 0:
 			fallthrough
 		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
-			if totalHtlcWeight != 0 {
-				fmt.Println("sub")
-				totalHtlcWeight -= HtlcWeight
-			}
-			fmt.Println("THEY FAIL")
+			fmt.Println("sub")
+			totalHtlcWeight -= HtlcWeight
+			fmt.Println("THEY FAIL: ", totalHtlcWeight)
 
 			settledBalance += entry.Amount
 		}
 
+	}
+
+	if totalHtlcWeight < 0 {
+		totalHtlcWeight = 0
 	}
 
 	if lc.channelState.IsInitiator {
