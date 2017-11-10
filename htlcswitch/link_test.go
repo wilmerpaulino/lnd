@@ -16,6 +16,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/roasbeef/btcd/chaincfg/chainhash"
@@ -100,8 +101,6 @@ func createInterceptorFunc(prefix, receiver string, messages []expectedMessage,
 		}
 	}
 
-	//fmt.Printf("%v expect to recv: %v", receiver, spew.Sdump(expectToReceive))
-
 	// Return function which checks the message order and skip the
 	// messages.
 	return func(m lnwire.Message) (bool, error) {
@@ -111,9 +110,6 @@ func createInterceptorFunc(prefix, receiver string, messages []expectedMessage,
 		}
 
 		if messageChanID == chanID {
-			//fmt.Printf("got %v, num %v\n", m.MsgType(),
-			//	len(expectToReceive))
-
 			if len(expectToReceive) == 0 {
 				var postfix string
 				fmt.Printf("%v: %v %v \n", prefix, m.MsgType(), postfix)
@@ -1569,7 +1565,6 @@ func TestChannelLinkBandwidthConsistency(t *testing.T) {
 	// Next, we'll settle the HTLC with our knowledge of the pre-image that
 	// we eventually learn (simulating a multi-hop payment). The bandwidth
 	// of the channel should now be re-balanced to the starting point.
-	fmt.Println("CHECKING")
 	settlePkt := htlcPacket{
 		htlc: &lnwire.UpdateFufillHTLC{
 			ID:              2,
@@ -1578,7 +1573,6 @@ func TestChannelLinkBandwidthConsistency(t *testing.T) {
 	}
 	aliceLink.HandleSwitchPacket(&settlePkt)
 	time.Sleep(time.Millisecond * 100)
-	// TODO(roasbeef): wrong from here down
 	assertLinkBandwidth(t, aliceLink, aliceStartingBandwidth)
 
 	// Finally, we'll test the scenario of failing an HTLC received by the
@@ -1729,7 +1723,7 @@ func TestChannelLinkBandwidthConsistencyOverflow(t *testing.T) {
 
 // TestChannelRetransmission tests the ability of the channel links to
 // synchronize theirs states after abrupt disconnect.
-/*func TestChannelRetransmission(t *testing.T) {
+func TestChannelRetransmission(t *testing.T) {
 	t.Parallel()
 
 	retransmissionTests := []struct {
@@ -1875,9 +1869,9 @@ func TestChannelLinkBandwidthConsistencyOverflow(t *testing.T) {
 		serverErr := make(chan error, 4)
 
 		aliceInterceptor := createInterceptorFunc("[alice] <-- [bob]",
-			"alice", messages, chanID, true)
+			"alice", messages, chanID, false)
 		bobInterceptor := createInterceptorFunc("[alice] --> [bob]",
-			"bob", messages, chanID, true)
+			"bob", messages, chanID, false)
 
 		// Add interceptor to check the order of Bob and Alice messages.
 		n := newThreeHopNetwork(t,
@@ -1984,4 +1978,4 @@ func TestChannelLinkBandwidthConsistencyOverflow(t *testing.T) {
 			paymentWithRestart(t, test.messages)
 		})
 	}
-}*/
+}

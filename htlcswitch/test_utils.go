@@ -305,7 +305,6 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 			return nil, nil, errors.New("unable to find stored alice channel")
 		}
 
-		fmt.Println("restart alice")
 		newAliceChannel, err := lnwallet.NewLightningChannel(aliceSigner,
 			nil, estimator, aliceStoredChannel)
 		if err != nil {
@@ -331,7 +330,6 @@ func createTestChannel(alicePrivKey, bobPrivKey []byte,
 			return nil, nil, errors.New("unable to find stored bob channel")
 		}
 
-		fmt.Println("restart bob")
 		newBobChannel, err := lnwallet.NewLightningChannel(bobSigner, nil,
 			estimator, bobStoredChannel)
 		if err != nil {

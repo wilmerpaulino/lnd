@@ -4639,7 +4639,7 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 
 	i := 0
 	//fmt.Println("our up: ", spew.Sdump(htlcView.ourUpdates))
-	fmt.Println("he: ", totalHtlcWeight)
+	//fmt.Println("he: ", totalHtlcWeight)
 	for _, entry := range htlcView.ourUpdates {
 		switch {
 		case entry.EntryType == Add && entry.addCommitHeightLocal == 0:
@@ -4661,12 +4661,12 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 
 			i++
 
-			fmt.Println("OUR ADD")
+			//fmt.Println("OUR ADD")
 			totalHtlcWeight += HtlcWeight
 
 		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
-			fmt.Println("WE SETTLE")
-			fmt.Println("minw")
+			//fmt.Println("WE SETTLE")
+			//fmt.Println("minw")
 			totalHtlcWeight -= HtlcWeight
 
 			settledBalance += entry.Amount
@@ -4675,12 +4675,13 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 			fallthrough
 		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
 			totalHtlcWeight -= HtlcWeight
-			fmt.Println("FAIL")
+			//fmt.Println("FAIL")
 		}
 
 		// TODO(roasbeef): also need to modify weight in each case ^
 	}
-	fmt.Println("m he: ", totalHtlcWeight)
+
+	//fmt.Println("m he: ", totalHtlcWeight)
 	for _, entry := range htlcView.theirUpdates {
 		switch {
 		case entry.EntryType == Add && entry.addCommitHeightLocal == 0:
@@ -4690,21 +4691,21 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 
 			}
 
-			fmt.Println("THEY ADDED")
+			//fmt.Println("THEY ADDED")
 
 			totalHtlcWeight += HtlcWeight
 
 		case entry.EntryType == Settle && entry.removeCommitHeightLocal == 0:
-			fmt.Println("sub")
-			fmt.Println("THEY SETTLE")
+			//fmt.Println("sub")
+			//fmt.Println("THEY SETTLE")
 			totalHtlcWeight -= HtlcWeight
 
 		case entry.EntryType == Fail && entry.removeCommitHeightLocal == 0:
 			fallthrough
 		case entry.EntryType == MalformedFail && entry.removeCommitHeightLocal == 0:
-			fmt.Println("sub")
+			//fmt.Println("sub")
 			totalHtlcWeight -= HtlcWeight
-			fmt.Println("THEY FAIL: ", totalHtlcWeight)
+			//fmt.Println("THEY FAIL: ", totalHtlcWeight)
 
 			settledBalance += entry.Amount
 		}
@@ -4716,21 +4717,21 @@ func (lc *LightningChannel) availableBalance() lnwire.MilliSatoshi {
 	}
 
 	if lc.channelState.IsInitiator {
-		fmt.Println("htlc w: ", totalHtlcWeight)
+		//fmt.Println("htlc w: ", totalHtlcWeight)
 		totalCommitWeight := CommitWeight + totalHtlcWeight
 		additionalFee := lnwire.NewMSatFromSatoshis(
 			btcutil.Amount((int64(feePerKw) * totalCommitWeight) / 1000),
 		)
 
-		fmt.Println("est total w: ", totalCommitWeight)
-		fmt.Println("est htlc fee: ", additionalFee)
+		//fmt.Println("est total w: ", totalCommitWeight)
+		//fmt.Println("est htlc fee: ", additionalFee)
 		settledBalance -= additionalFee
 	}
 
-	if lc.channelState.IsInitiator {
+	/*if lc.channelState.IsInitiator {
 		fmt.Println("test num h: ", i)
 		fmt.Println("est total b: ", settledBalance)
-	}
+	}*/
 
 	return settledBalance
 }

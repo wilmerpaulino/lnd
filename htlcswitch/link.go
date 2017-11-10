@@ -2,7 +2,6 @@ package htlcswitch
 
 import (
 	"bytes"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -719,10 +718,6 @@ func (l *channelLink) handleUpstreamMsg(msg lnwire.Message) {
 		if len(msgsToReSend) > 0 {
 			log.Infof("Sending %v updates to synchronize the "+
 				"state for ChannelPoint(%v)", len(msgsToReSend),
-				l.channel.ChannelPoint())
-
-			fmt.Printf("Sending %v updates to synchronize the "+
-				"state for ChannelPoint(%v)\n", len(msgsToReSend),
 				l.channel.ChannelPoint())
 		}
 
