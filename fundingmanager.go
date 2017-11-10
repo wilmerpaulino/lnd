@@ -668,8 +668,8 @@ func (f *fundingManager) handlePendingChannels(msg *pendingChansReq) {
 			identityPub:   dbPendingChan.IdentityPub,
 			channelPoint:  &dbPendingChan.FundingOutpoint,
 			capacity:      dbPendingChan.Capacity,
-			localBalance:  dbPendingChan.LocalBalance.ToSatoshis(),
-			remoteBalance: dbPendingChan.RemoteBalance.ToSatoshis(),
+			localBalance:  dbPendingChan.LocalCommitment.LocalBalance.ToSatoshis(),
+			remoteBalance: dbPendingChan.LocalCommitment.RemoteBalance.ToSatoshis(),
 		}
 
 		pendingChannels = append(pendingChannels, pendingChan)
@@ -1461,9 +1461,7 @@ func (f *fundingManager) waitForFundingConfirmation(completeChan *channeldb.Open
 
 	// Now that the channel has been fully confirmed, we'll mark it as open
 	// within the database.
-	completeChan.IsPending = false
-	err = f.cfg.Wallet.Cfg.Database.MarkChannelAsOpen(&fundingPoint, shortChanID)
-	if err != nil {
+	if err := completeChan.MarkAsOpen(shortChanID); err != nil {
 		fndgLog.Errorf("error setting channel pending flag to false: "+
 			"%v", err)
 		return
