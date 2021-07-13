@@ -28,6 +28,7 @@ func testBasicChannelFunding(net *lntest.NetworkHarness, t *harnessTest) {
 		lnrpc.CommitmentType_LEGACY,
 		lnrpc.CommitmentType_STATIC_REMOTE_KEY,
 		lnrpc.CommitmentType_ANCHORS,
+		lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE,
 	}
 
 	// testFunding is a function closure that takes Carol and Dave's
@@ -54,8 +55,24 @@ func testBasicChannelFunding(net *lntest.NetworkHarness, t *harnessTest) {
 		ctxt, _ = context.WithTimeout(ctxb, defaultTimeout)
 		net.EnsureConnected(ctxt, t.t, carol, dave)
 
+		// Since the channel type will be negotiated implicitly based on
+		// the features supported, we only provide a shim when we know a
+		// script-enforced leased channel is to be opened.
+		var fundingShim *lnrpc.FundingShim
+		if carolCommitType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE &&
+			daveCommitType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE {
+
+			_, minerHeight, err := net.Miner.Client.GetBestBlock()
+			require.NoError(t.t, err)
+
+			thawHeight := uint32(minerHeight + 144)
+			fundingShim, _, _ = deriveFundingShim(
+				net, t, carol, dave, funding.MaxBtcFundingAmount,
+				thawHeight, true,
+			)
+		}
 		carolChan, daveChan, closeChan, err := basicChannelFundingTest(
-			t, net, carol, dave, nil,
+			t, net, carol, dave, fundingShim,
 		)
 		require.NoError(t.t, err, "failed funding flow")
 
@@ -75,21 +92,27 @@ func testBasicChannelFunding(net *lntest.NetworkHarness, t *harnessTest) {
 		expType := carolCommitType
 
 		switch daveCommitType {
+		// Dave support script enforced leases, channel will be of this
+		// type.
+		case lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE:
 
-		// Dave supports anchors, type will be what
-		// Carol supports.
+		// Dave supports anchors, channel will be downgraded to this
+		// type if Carol supports script enforced leases.
 		case lnrpc.CommitmentType_ANCHORS:
+			if expType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE {
+				expType = lnrpc.CommitmentType_ANCHORS
+			}
 
-		// Dave only supports tweakless, channel will
-		// be downgraded to this type if Carol supports
-		// anchors.
+		// Dave only supports tweakless, channel will be downgraded to
+		// this type if Carol supports anchors.
 		case lnrpc.CommitmentType_STATIC_REMOTE_KEY:
-			if expType == lnrpc.CommitmentType_ANCHORS {
+			if expType == lnrpc.CommitmentType_ANCHORS ||
+				expType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE {
 				expType = lnrpc.CommitmentType_STATIC_REMOTE_KEY
 			}
 
-		// Dave only supoprts legacy type, channel will
-		// be downgraded to this type.
+		// Dave only supoprts legacy type, channel will be downgraded to
+		// this type.
 		case lnrpc.CommitmentType_LEGACY:
 			expType = lnrpc.CommitmentType_LEGACY
 
@@ -100,6 +123,9 @@ func testBasicChannelFunding(net *lntest.NetworkHarness, t *harnessTest) {
 		// Check that the signalled type matches what we
 		// expect.
 		switch {
+		case expType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE &&
+			chansCommitType == lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE:
+
 		case expType == lnrpc.CommitmentType_ANCHORS &&
 			chansCommitType == lnrpc.CommitmentType_ANCHORS:
 
@@ -235,6 +261,16 @@ func basicChannelFundingTest(t *harnessTest, net *lntest.NetworkHarness,
 	require.NoError(t.t, err, "unable to obtain chan")
 
 	closeChan := func() {
+		if fundingShim != nil && fundingShim.GetChanPointShim() != nil &&
+			fundingShim.GetChanPointShim().ThawHeight != 0 {
+
+			thawHeight := fundingShim.GetChanPointShim().ThawHeight
+			_, minerHeight, err := net.Miner.Client.GetBestBlock()
+			require.NoError(t.t, err)
+			numBlocks := thawHeight - uint32(minerHeight)
+			_ = mineBlocks(t, net, numBlocks, 0)
+		}
+
 		// Finally, immediately close the channel. This function will
 		// also block until the channel is closed and will additionally
 		// assert the relevant channel closing post conditions.
@@ -400,7 +436,7 @@ func testExternalFundingChanPoint(net *lntest.NetworkHarness, t *harnessTest) {
 	const thawHeight uint32 = 10
 	const chanSize = funding.MaxBtcFundingAmount
 	fundingShim1, chanPoint1, _ := deriveFundingShim(
-		net, t, carol, dave, chanSize, thawHeight, 1, false,
+		net, t, carol, dave, chanSize, thawHeight, false,
 	)
 	_ = openChannelStream(
 		ctxb, t, net, carol, dave, lntest.OpenChannelParams{
@@ -417,7 +453,7 @@ func testExternalFundingChanPoint(net *lntest.NetworkHarness, t *harnessTest) {
 	// do exactly that now. For this one we publish the transaction so we
 	// can mine it later.
 	fundingShim2, chanPoint2, _ := deriveFundingShim(
-		net, t, carol, dave, chanSize, thawHeight, 2, true,
+		net, t, carol, dave, chanSize, thawHeight, true,
 	)
 
 	// At this point, we'll now carry out the normal basic channel funding

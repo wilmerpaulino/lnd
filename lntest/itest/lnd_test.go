@@ -37,7 +37,6 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/watchtowerrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
@@ -1106,6 +1105,17 @@ func testOnchainFundRecovery(net *lntest.NetworkHarness, t *harnessTest) {
 	restoreCheckBalance(finalBalance-minerAmt-fee, 1, 21, nil)
 }
 
+// commitTypeHasAnchors returns whether commitType uses anchor outputs.
+func commitTypeHasAnchors(commitType lnrpc.CommitmentType) bool {
+	switch commitType {
+	case lnrpc.CommitmentType_ANCHORS,
+		lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE:
+		return true
+	default:
+		return false
+	}
+}
+
 // nodeArgsForCommitType returns the command line flag to supply to enable this
 // commitment type.
 func nodeArgsForCommitType(commitType lnrpc.CommitmentType) []string {
@@ -1116,6 +1126,11 @@ func nodeArgsForCommitType(commitType lnrpc.CommitmentType) []string {
 		return []string{}
 	case lnrpc.CommitmentType_ANCHORS:
 		return []string{"--protocol.anchors"}
+	case lnrpc.CommitmentType_SCRIPT_ENFORCED_LEASE:
+		return []string{
+			"--protocol.anchors",
+			"--protocol.script-enforced-lease",
+		}
 	}
 
 	return nil
@@ -1136,7 +1151,7 @@ func calcStaticFee(commitType lnrpc.CommitmentType, numHTLCs int) btcutil.Amount
 	// the value of the two anchors to the resulting fee the initiator
 	// pays. In addition the fee rate is capped at 10 sat/vbyte for anchor
 	// channels.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if commitTypeHasAnchors(commitType) {
 		feePerKw = chainfee.SatPerKVByte(
 			lnwallet.DefaultAnchorsCommitMaxFeeRateSatPerVByte * 1000,
 		).FeePerKWeight()
@@ -3226,7 +3241,8 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	// sweep the HTLC second level output one block earlier (than the
 	// nursery that waits an additional block, and handles non-anchor
 	// channels). So we set a maturity height that is one less.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	hasAnchors := commitTypeHasAnchors(commitType)
+	if hasAnchors {
 		htlcCsvMaturityHeight = padCLTV(
 			startHeight + defaultCLTV + defaultCSV,
 		)
@@ -3310,7 +3326,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	// also expect the anchor sweep tx to be in the mempool.
 	expectedTxes := 1
 	expectedFeeRate := commitFeeRate
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		expectedTxes = 2
 		expectedFeeRate = actualFeeRate
 	}
@@ -3347,7 +3363,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 
 	// If we expect anchors, add alice's anchor to our expected set of
 	// reports.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		aliceReports[aliceAnchor.OutPoint.String()] = &lnrpc.Resolution{
 			ResolutionType: lnrpc.ResolutionType_ANCHOR,
 			Outcome:        lnrpc.ResolutionOutcome_CLAIMED,
@@ -3404,7 +3420,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 				"limbo")
 		}
 		expectedRecoveredBalance := int64(0)
-		if commitType == lnrpc.CommitmentType_ANCHORS {
+		if hasAnchors {
 			expectedRecoveredBalance = anchorSize
 		}
 		if forceClose.RecoveredBalance != expectedRecoveredBalance {
@@ -3453,7 +3469,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	)
 
 	// If we have anchors, add an anchor resolution for carol.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		carolReports[carolAnchor.OutPoint.String()] = &lnrpc.Resolution{
 			ResolutionType: lnrpc.ResolutionType_ANCHOR,
 			Outcome:        lnrpc.ResolutionOutcome_CLAIMED,
@@ -3528,7 +3544,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 				"limbo")
 		}
 		expectedRecoveredBalance := int64(0)
-		if commitType == lnrpc.CommitmentType_ANCHORS {
+		if hasAnchors {
 			expectedRecoveredBalance = anchorSize
 		}
 		if forceClose.RecoveredBalance != expectedRecoveredBalance {
@@ -3762,7 +3778,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	expectedTxes = numInvoices
 
 	// In case of anchors, the timeout txs will be aggregated into one.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		expectedTxes = 1
 	}
 
@@ -3780,7 +3796,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	// this is an anchor channel, the transactions are aggregated by the
 	// sweeper into one.
 	numInputs := 1
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		numInputs = numInvoices + 1
 	}
 
@@ -3908,7 +3924,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 	// Advance the chain until just before the 2nd-layer CSV delays expire.
 	// For anchor channels thhis is one block earlier.
 	numBlocks := uint32(defaultCSV - 1)
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		numBlocks = defaultCSV - 2
 
 	}
@@ -4143,7 +4159,7 @@ func channelForceClosureTest(net *lntest.NetworkHarness, t *harnessTest,
 
 	// In addition, if this is an anchor-enabled channel, further add the
 	// anchor size.
-	if commitType == lnrpc.CommitmentType_ANCHORS {
+	if hasAnchors {
 		carolExpectedBalance += btcutil.Amount(anchorSize)
 	}
 
@@ -9440,16 +9456,18 @@ func assertNumActiveHtlcs(nodes []*lntest.HarnessNode, numHtlcs int) error {
 }
 
 func assertSpendingTxInMempool(t *harnessTest, miner *rpcclient.Client,
-	timeout time.Duration, chanPoint wire.OutPoint) chainhash.Hash {
+	timeout time.Duration, inputs ...wire.OutPoint) chainhash.Hash {
 
-	tx := getSpendingTxInMempool(t, miner, timeout, chanPoint)
+	tx := getSpendingTxInMempool(t, miner, timeout, inputs...)
 	return tx.TxHash()
 }
 
 // getSpendingTxInMempool waits for a transaction spending the given outpoint to
 // appear in the mempool and returns that tx in full.
 func getSpendingTxInMempool(t *harnessTest, miner *rpcclient.Client,
-	timeout time.Duration, chanPoint wire.OutPoint) *wire.MsgTx {
+	timeout time.Duration, inputs ...wire.OutPoint) *wire.MsgTx {
+
+	inputSet := make(map[wire.OutPoint]struct{}, len(inputs))
 
 	breakTimeout := time.After(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -9474,13 +9492,30 @@ func getSpendingTxInMempool(t *harnessTest, miner *rpcclient.Client,
 				if err != nil {
 					t.Fatalf("unable to fetch tx: %v", err)
 				}
-
 				msgTx := tx.MsgTx()
+
+				// Include the inputs again in case they were
+				// removed in a previous iteration.
+				for _, input := range inputs {
+					inputSet[input] = struct{}{}
+				}
+
 				for _, txIn := range msgTx.TxIn {
-					if txIn.PreviousOutPoint == chanPoint {
-						return msgTx
+					input := txIn.PreviousOutPoint
+					if _, ok := inputSet[input]; ok {
+						delete(inputSet, input)
 					}
 				}
+
+				if len(inputSet) > 0 {
+					// Missing input, check next transaction
+					// or try again.
+					continue
+				}
+
+				// Transaction spends all expected inputs,
+				// return.
+				return msgTx
 			}
 		}
 	}
@@ -11282,17 +11317,14 @@ func assertTxLabel(ctx context.Context, t *harnessTest,
 // keys on both sides.
 func deriveFundingShim(net *lntest.NetworkHarness, t *harnessTest,
 	carol, dave *lntest.HarnessNode, chanSize btcutil.Amount,
-	thawHeight uint32, keyIndex int32, publish bool) (*lnrpc.FundingShim,
+	thawHeight uint32, publish bool) (*lnrpc.FundingShim,
 	*lnrpc.ChannelPoint, *chainhash.Hash) {
 
 	ctxb := context.Background()
-	keyLoc := &signrpc.KeyLocator{
-		KeyFamily: 9999,
-		KeyIndex:  keyIndex,
-	}
-	carolFundingKey, err := carol.WalletKitClient.DeriveKey(ctxb, keyLoc)
+	keyLoc := &walletrpc.KeyReq{KeyFamily: 9999}
+	carolFundingKey, err := carol.WalletKitClient.DeriveNextKey(ctxb, keyLoc)
 	require.NoError(t.t, err)
-	daveFundingKey, err := dave.WalletKitClient.DeriveKey(ctxb, keyLoc)
+	daveFundingKey, err := dave.WalletKitClient.DeriveNextKey(ctxb, keyLoc)
 	require.NoError(t.t, err)
 
 	// Now that we have the multi-sig keys for each party, we can manually
