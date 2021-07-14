@@ -3206,9 +3206,8 @@ func (f *Manager) handleInitFundingMsg(msg *InitFundingMsg) {
 
 	// For anchor channels cap the initial commit fee rate at our defined
 	// maximum.
-	if commitType == lnwallet.CommitmentTypeAnchorsZeroFeeHtlcTx &&
+	if commitType.HasAnchors() &&
 		commitFeePerKw > f.cfg.MaxAnchorsCommitFeeRate {
-
 		commitFeePerKw = f.cfg.MaxAnchorsCommitFeeRate
 	}
 

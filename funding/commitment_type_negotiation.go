@@ -50,6 +50,23 @@ func explicitNegotiateCommitmentType(channelType lnwire.ChannelType,
 	channelFeatures := lnwire.RawFeatureVector(channelType)
 
 	switch {
+	// Lease script enforcement + anchors zero fee + static remote key
+	// features only.
+	case channelFeatures.OnlyContains(
+		lnwire.ScriptEnforcedLeaseRequired,
+		lnwire.AnchorsZeroFeeHtlcTxRequired,
+		lnwire.StaticRemoteKeyRequired,
+	):
+		if !hasFeatures(
+			local, remote,
+			lnwire.ScriptEnforcedLeaseOptional,
+			lnwire.AnchorsZeroFeeHtlcTxOptional,
+			lnwire.StaticRemoteKeyOptional,
+		) {
+			return 0, errUnsupportedChannelType
+		}
+		return lnwallet.CommitmentTypeScriptEnforcedLease, nil
+
 	// Anchors zero fee + static remote key features only.
 	case channelFeatures.OnlyContains(
 		lnwire.AnchorsZeroFeeHtlcTxRequired,
@@ -85,6 +102,12 @@ func explicitNegotiateCommitmentType(channelType lnwire.ChannelType,
 // fetures.
 func implicitNegotiateCommitmentType(local,
 	remote *lnwire.FeatureVector) lnwallet.CommitmentType {
+
+	// If both peers are signalling support for anchor commitments with
+	// zero-fee HTLC transactions, we'll use this type.
+	if hasFeatures(local, remote, lnwire.ScriptEnforcedLeaseOptional) {
+		return lnwallet.CommitmentTypeScriptEnforcedLease
+	}
 
 	// If both peers are signalling support for anchor commitments with
 	// zero-fee HTLC transactions, we'll use this type.
